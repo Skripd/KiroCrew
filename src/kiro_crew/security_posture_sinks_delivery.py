@@ -36,6 +36,14 @@ _DELIVERY_SINKS: tuple[tuple[str, str, str], ...] = (
         "slack/handler.py; one shared redact( pass, plus channel-wide pings defanged.",
     ),
     (
+        "Slack code-channel work board",
+        "slack/code_channels/board/model.py",
+        "The conductor's goal line and each worker's report summary on the pinned "
+        "board message, posted with chat.postMessage / chat.update rather than "
+        "slack/handler.py: redact_via_context on the displayed form (via "
+        "redact_for_display) before and after the cut, with every Slack ping stripped.",
+    ),
+    (
         "Slack cron / notification posts",
         "slack/gateway_runtime/subagent_injection.py",
         "Job names, cron results, and error strings before they reach a channel.",
