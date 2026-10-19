@@ -338,6 +338,10 @@ _CODE_EXEC_SETTINGS: frozenset[str] = frozenset(
         # The provider and model a Strands session runs: where its conversation goes.
         "agent.strands_provider",
         "agent.strands_model",
+        # A Fargate profile picks the AWS identity, task definition and network
+        # a session's commands run under, and the gateway sends git credentials
+        # to that task.
+        "session_environments.fargate_profiles",
     }
 )
 
