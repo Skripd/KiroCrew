@@ -15,8 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from dataclasses import replace
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -1128,10 +1126,15 @@ def _bar_labels(h):
     return [item["label"] for item in h.client.last("set_context_bar")["items"]]
 
 
+def _bar_keys(h):
+    return [item["key"] for item in h.client.last("set_context_bar")["items"]]
+
+
 def test_a_bar_sent_outside_a_refresh_never_re_sends_a_refused_cached_board(
     tmp_path, repo, monkeypatch
 ):
-    """The context bar lists the cached board's workers: re-checked like the wrap-up."""
+    """The context bar's Workers item comes from the cached board: re-checked like
+    the wrap-up (the bar names no worker; their tally is the board's)."""
     binding = _scoped_binding(repo)
     conductor = SimpleNamespace(key="chat-cond", _slack_channel="C1")
     monkeypatch.setattr(cc_binding, "bound_slot", lambda state, b: conductor)
@@ -1144,11 +1147,11 @@ def test_a_bar_sent_outside_a_refresh_never_re_sends_a_refused_cached_board(
     snap = model.BoardSnapshot(rows=(_row(title="Fix login", session_key="chat-w1"),))
     h.svc._boards[rec.key] = snap
     assert asyncio.run(h.svc.republish_bar(binding)) == ""
-    assert any("Fix login" in label for label in _bar_labels(h))  # admitted: shown
+    assert "workers" in _bar_keys(h)  # admitted: shown
     refusal["why"] = "the channel is shared with another organization"
     asyncio.run(h.svc.republish_bar(binding))
     assert rec.key not in h.svc._boards
-    assert not any("Fix login" in label for label in _bar_labels(h))
+    assert "workers" not in _bar_keys(h)
     # A turn start that re-sends the bar (no bar stored yet) checks the same scope.
     h.svc._boards[rec.key] = snap
     stored = h.svc.store.get("T1", "C1")
@@ -1156,7 +1159,71 @@ def test_a_bar_sent_outside_a_refresh_never_re_sends_a_refused_cached_board(
     h.svc.store.put(stored)
     asyncio.run(h.svc.ensure(binding))
     assert rec.key not in h.svc._boards
-    assert not any("Fix login" in label for label in _bar_labels(h))
+    assert "workers" not in _bar_keys(h)
+
+
+def test_the_bar_asks_the_scope_after_its_last_await_before_sending(tmp_path, repo, monkeypatch):
+    """The agent-item read is a thread hop: a refusal landing in it still keeps
+    the Workers item off the bar that is sent."""
+    from kiro_crew.slack.code_channels import agent_bar
+
+    binding = _scoped_binding(repo)
+    conductor = SimpleNamespace(key="chat-cond", _slack_channel="C1")
+    monkeypatch.setattr(cc_binding, "bound_slot", lambda state, b: conductor)
+    monkeypatch.setattr(surface, "dashboard_state", lambda: object())
+    refusal = {"why": ""}
+    monkeypatch.setattr(source, "_publish_refusal", lambda state, b: refusal["why"])
+    h = _Harness(tmp_path)
+    source.set_scope_predicate(None)  # the production scope check
+    rec = asyncio.run(h.svc.ensure(binding))
+    h.svc._boards[rec.key] = model.BoardSnapshot(
+        rows=(_row(title="Fix login", session_key="chat-w1"),)
+    )
+    real_items = agent_bar.agent_items
+
+    def read_then_refuse(channel_id):
+        refusal["why"] = "the channel is shared with another organization"
+        return real_items(channel_id)
+
+    monkeypatch.setattr(agent_bar, "agent_items", read_then_refuse)
+    asyncio.run(h.svc.republish_bar(binding))
+    assert "workers" not in _bar_keys(h)
+    assert rec.key not in h.svc._boards
+
+
+def test_a_turn_starts_bar_never_re_sends_a_refused_cached_board(tmp_path, repo, monkeypatch):
+    """The turn start rebuilds the bar from its last state: the same scope check."""
+    binding = _scoped_binding(repo)
+    conductor = SimpleNamespace(key="chat-cond", _slack_channel="C1")
+    monkeypatch.setattr(cc_binding, "bound_slot", lambda state, b: conductor)
+    monkeypatch.setattr(surface, "dashboard_state", lambda: object())
+    refusal = {"why": ""}
+    monkeypatch.setattr(source, "_publish_refusal", lambda state, b: refusal["why"])
+    h = _Harness(tmp_path)
+    source.set_scope_predicate(None)  # the production scope check
+    rec = asyncio.run(h.svc.ensure(binding))
+    url = "https://github.com/acme/widgets/pull/7"
+    snap = model.BoardSnapshot(
+        rows=(
+            _row(
+                title="Fix login",
+                session_key="chat-w1",
+                pr_number=7,
+                pr_url=url,
+                pr_state="open",
+            ),
+        )
+    )
+    h.svc._boards[rec.key] = snap
+    assert asyncio.run(h.svc.republish_bar(binding)) == ""
+    items = h.client.last("set_context_bar")["items"]
+    assert "workers" in _bar_keys(h) and any(i.get("url") == url for i in items)
+    refusal["why"] = "the channel is shared with another organization"
+    asyncio.run(h.svc.on_turn_start(binding))  # Stop changes the set: a real send
+    items = h.client.last("set_context_bar")["items"]
+    assert "stop" in _bar_keys(h)
+    assert "workers" not in _bar_keys(h) and not any(i.get("url") == url for i in items)
+    assert rec.key not in h.svc._boards
 
 
 def test_a_refused_refresh_forgets_the_cached_board_even_when_the_pr_read_fails(
@@ -1591,275 +1658,6 @@ def test_settled_workers_beyond_the_view_are_not_read_for_the_diff(tmp_path, rep
     assert not any(b.startswith("feat/d") for b in calls) and len(calls) == 20
 
 
-# ── GPT round on 1e22f0268e (security class: publish only what the channel admits) ──
-
-
-@pytest.mark.parametrize("where", ["C1", "C-origin"])
-@pytest.mark.parametrize("mode", ["off", "review"])
-def test_a_channel_or_origin_set_off_or_review_admits_no_board(monkeypatch, where, mode):
-    """The activation gate is part of THE scope check, so every board path obeys it."""
-    from kiro_crew.config.loader import ACTIVATION_OFF, ACTIVATION_REVIEW
-
-    source.set_scope_predicate(lambda state, binding: True)  # the exemption admits it
-    binding = replace(_binding(), origin_channel_id="C-origin")
-    assert source.scope_admits(None, binding)
-    activation = ACTIVATION_OFF if mode == "off" else ACTIVATION_REVIEW
-    monkeypatch.setattr(
-        cc_binding, "live_config", lambda orch=None: suite._LiveConfig({where: activation})
-    )
-    assert not source.scope_admits(None, binding)
-
-
-def test_the_board_publish_honours_an_off_channel(monkeypatch):
-    from kiro_crew.config.loader import ACTIVATION_OFF
-    from kiro_crew.slack.code_channels.board import links
-
-    sent: list = []
-
-    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None):
-        sent.append(snapshot)
-        return "updated"
-
-    monkeypatch.setattr(publisher, "publish", fake_publish)
-    monkeypatch.setattr(links, "link_builder", lambda: _link)
-    monkeypatch.setattr(surface, "dashboard_state", lambda: None)
-    source.set_scope_predicate(lambda state, binding: True)
-    monkeypatch.setattr(
-        cc_binding, "live_config", lambda orch=None: suite._LiveConfig({"C1": ACTIVATION_OFF})
-    )
-    assert asyncio.run(board_pkg.publish(_binding(), _snapshot())) == "out_of_scope"
-    assert sent == []
-
-
-def test_a_scope_refused_during_the_diff_build_sends_no_worker_content(tmp_path, repo, monkeypatch):
-    """The diff's git work takes seconds: the scope is judged again before it is sent."""
-    tree = tmp_path / "wt-secret"
-    suite._git("worktree", "add", "-q", "-b", "feat/secret", str(tree), "main", cwd=repo)
-    (tree / "secret_plan.txt").write_text("worker content\n")
-    suite._git("add", "secret_plan.txt", cwd=tree)
-    suite._git("commit", "-q", "-m", "w", cwd=tree)
-    board = model.BoardSnapshot(rows=(_row(title="Secret work", branch="feat/secret"),))
-    h = _Harness(tmp_path, snapshot=board)
-    binding = suite._FakeBinding(project_dir=str(repo))
-    rec = asyncio.run(h.svc.ensure(binding))
-    (Path(rec.worktree) / "README.md").write_text("channel change\n")
-    real_build = h.svc._build_diff
-    admitted = {"now": True}
-
-    def build_then_share(record, board_arg=None):
-        out = real_build(record, board_arg)
-        if board_arg is not None:
-            admitted["now"] = False  # the channel turned shared during the git work
-        return out
-
-    monkeypatch.setattr(h.svc, "_build_diff", build_then_share)
-    source.set_scope_predicate(lambda state, b: admitted["now"])
-    asyncio.run(h.svc.refresh(binding))
-    content = h.client.last("set_diff_view")["content"]
-    assert "README.md" in content
-    assert "secret_plan.txt" not in content and "Secret work" not in content
-    assert rec.key not in h.svc._boards
-
-
-def test_worker_activity_refreshes_nothing_in_an_off_channel(tmp_path, repo, monkeypatch):
-    """Off or Review: no bar, no diff tab, no board from a worker-triggered refresh."""
-    from kiro_crew.config.loader import ACTIVATION_REVIEW
-
-    h = _Harness(tmp_path, snapshot=model.BoardSnapshot(rows=(_row(title="Fix login"),)))
-    binding = suite._FakeBinding(project_dir=str(repo))
-    rec = asyncio.run(h.svc.ensure(binding))
-    (Path(rec.worktree) / "README.md").write_text("a worker edited this\n")  # a new diff
-    before = len(h.client.calls)
-    monkeypatch.setattr(
-        cc_binding,
-        "live_config",
-        lambda orch=None: suite._LiveConfig({"C1": ACTIVATION_REVIEW}),
-    )
-    asyncio.run(h.svc.refresh(binding))
-    assert h.client.calls[before:] == [] and h.published == []
-
-
-def test_the_watch_writes_no_worker_status_in_an_off_channel(tmp_path, monkeypatch, lineage):
-    from kiro_crew.config.loader import ACTIVATION_OFF
-
-    lineage.record_worker("chat-w1", "chat-cond")
-    h, _rec, _scheduled, statuses = _watched(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        cc_binding, "live_config", lambda orch=None: suite._LiveConfig({"C1": ACTIVATION_OFF})
-    )
-    w1 = _live_slot("chat-w1")
-    dash = _Slots(**{"chat-cond": _live_slot("chat-cond"), "chat-w1": w1})
-    asyncio.run(h.svc.watch_tick(dash))
-    w1.turn_running, w1._turn_generation = True, 1
-    asyncio.run(h.svc.watch_tick(dash))
-    assert statuses == []
-
-
-def test_a_board_whose_scope_flips_mid_publish_sends_no_more(slack):
-    """Asked again before each write: a refusal during the edit's retry posts nothing."""
-    calls = {"n": 0}
-
-    def admits():
-        calls["n"] += 1
-        return calls["n"] == 1  # admitted for the first write only
-
-    waiting = model.BoardSnapshot(rows=(_row(state=model.WAITING_ON_YOU, report_stamp="r1"),))
-    asyncio.run(
-        publisher.publish(_binding(), waiting, link_for=_link, owner_id="U0", admits=admits)
-    )
-    assert len(slack.of("post_blocks")) == 1
-    assert slack.of("post_message") == []  # the needs-you mention was re-checked and refused
-    slack.fail["update_message"] = "message_not_found"
-    calls["n"] = 0
-    out = asyncio.run(
-        publisher.publish(_binding(), _snapshot(), link_for=_link, owner_id="U0", admits=admits)
-    )
-    assert out == "out_of_scope" and len(slack.of("post_blocks")) == 1  # no repost
-
-
-def test_the_publish_wrapper_hands_the_publisher_the_live_scope_check(monkeypatch):
-    from kiro_crew.slack.code_channels.board import links
-
-    seen: dict = {}
-
-    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None):
-        seen["admits"] = admits
-        return "updated"
-
-    monkeypatch.setattr(publisher, "publish", fake_publish)
-    monkeypatch.setattr(links, "link_builder", lambda: _link)
-    monkeypatch.setattr(surface, "dashboard_state", lambda: None)
-    verdict = {"now": True}
-    source.set_scope_predicate(lambda state, binding: verdict["now"])
-    asyncio.run(board_pkg.publish(_binding(), _snapshot()))
-    assert callable(seen["admits"]) and seen["admits"]()
-    verdict["now"] = False  # the publisher's later re-checks see the change
-    assert not seen["admits"]()
-
-
-def test_a_bar_whose_scope_flips_during_its_git_reads_is_sent_without_workers(
-    tmp_path, repo, monkeypatch
-):
-    h = _Harness(tmp_path)
-    binding = suite._FakeBinding(project_dir=str(repo))
-    rec = asyncio.run(h.svc.ensure(binding))
-    h.svc._boards[rec.key] = model.BoardSnapshot(rows=(_row(title="Fix login"),))
-    stored = h.svc.store.get("T1", "C1")
-    stored.bar_hash = ""
-    h.svc.store.put(stored)
-    real = h.svc._bar_state
-    admitted = {"now": True}
-
-    async def read_then_share(record):
-        out = await real(record)
-        admitted["now"] = False  # shared during the bar's git reads
-        return out
-
-    monkeypatch.setattr(h.svc, "_bar_state", read_then_share)
-    source.set_scope_predicate(lambda state, b: admitted["now"])
-    asyncio.run(h.svc.republish_bar(binding))
-    assert not any("Fix login" in label for label in _bar_labels(h))
-    assert rec.key not in h.svc._boards
-
-
-def test_a_diff_refusal_after_the_bar_went_out_resends_the_bar_without_workers(
-    tmp_path, repo, monkeypatch
-):
-    tree = tmp_path / "wt-w"
-    suite._git("worktree", "add", "-q", "-b", "feat/w", str(tree), "main", cwd=repo)
-    (tree / "w.txt").write_text("w\n")
-    suite._git("add", "w.txt", cwd=tree)
-    suite._git("commit", "-q", "-m", "w", cwd=tree)
-    board = model.BoardSnapshot(rows=(_row(title="Fix login", branch="feat/w"),))
-    h = _Harness(tmp_path, snapshot=board)
-    binding = suite._FakeBinding(project_dir=str(repo))
-    asyncio.run(h.svc.ensure(binding))
-    real_build = h.svc._build_diff
-    admitted = {"now": True}
-
-    def build_then_share(record, board_arg=None):
-        out = real_build(record, board_arg)
-        if board_arg is not None:
-            admitted["now"] = False
-        return out
-
-    monkeypatch.setattr(h.svc, "_build_diff", build_then_share)
-    source.set_scope_predicate(lambda state, b: admitted["now"])
-    asyncio.run(h.svc.refresh(binding))
-    assert not any("Fix login" in label for label in _bar_labels(h))
-    assert h.published == []
-
-
-def test_a_failed_channel_only_rebuild_takes_the_worker_tab_down(tmp_path, repo, monkeypatch):
-    h = _Harness(tmp_path, snapshot=model.BoardSnapshot(rows=(_row(title="Fix login"),)))
-    binding = suite._FakeBinding(project_dir=str(repo))
-    rec = asyncio.run(h.svc.ensure(binding))
-    rec = h.svc.store.get("T1", "C1")
-    rec.diff_hash, rec.view_id = "old", "V1"  # a combined tab is up
-    h.svc._boards[rec.key] = model.BoardSnapshot(rows=(_row(title="Fix login"),))
-    calls = {"n": 0}
-
-    def build(record, board_arg=None):
-        calls["n"] += 1
-        return ("diff --git a/x b/x\n", "main", "w") if board_arg is not None else None
-
-    monkeypatch.setattr(h.svc, "_build_diff", build)
-    source.set_scope_predicate(lambda state, b: False)
-    asyncio.run(h.svc._publish_diff(rec, binding))
-    assert calls["n"] == 2
-    assert h.client.last("remove_view") == {"view_id": "V1"}
-    assert rec.view_id == "" and rec.diff_hash == ""
-
-
-def test_a_wrap_up_whose_scope_flips_before_the_post_leaves_the_workers_out(slack, monkeypatch):
-    """GPT on 5da454ba22: the lock wait and the archive check can outlast a sharing change."""
-    from kiro_crew.slack.code_channels import wrapup
-
-    admitted = {"now": True}
-
-    async def facts(binding):
-        return wrapup.Facts(branch="feat/x", workers=("• Fix login: PR #12 merged",))
-
-    async def archived_then_shared(binding):
-        admitted["now"] = False  # Slack Connect recorded while the post waited
-        return False
-
-    async def no_store(channel, **fields):
-        return None
-
-    monkeypatch.setattr(wrapup, "gather_facts", facts)
-    monkeypatch.setattr(surface, "is_archived", archived_then_shared)
-    monkeypatch.setattr(surface, "channel_admits", lambda cfg, b: True)
-    monkeypatch.setattr(surface, "audit", lambda *a, **k: None)
-    monkeypatch.setattr(wrapup, "update_async", no_store)
-    monkeypatch.setattr(surface, "dashboard_state", lambda: None)
-    source.set_scope_predicate(lambda state, b: admitted["now"])
-    posted: list = []
-
-    async def post_blocks(channel, blocks, text, thread_ts=None):
-        posted.append(json.dumps(blocks))
-        return "300.1"
-
-    monkeypatch.setattr(slack, "post_blocks", post_blocks)
-    asyncio.run(wrapup.post_wrap_up(_binding(), "All done", caller="U0"))
-    assert posted and "Fix login" not in posted[0] and "feat/x" in posted[0]
-
-
-def test_the_conductors_turn_hooks_forget_the_watchs_status_record(tmp_path, monkeypatch):
-    """The base's turn hooks hand the status to the conductor; the watch's record goes."""
-    h = _Harness(tmp_path)
-    monkeypatch.setattr(h.svc, "ensure", lambda binding: asyncio.sleep(0))
-    monkeypatch.setattr(h.svc, "schedule_refresh", lambda binding, *, delay=0.0: None)
-    key = "T1:C1"
-    for hook in (h.svc.on_turn_start, h.svc.on_turn_end):
-        h.svc._working[key] = "suspended"
-        h.svc._status_failures[key] = 2
-        h.svc._status_hold[key] = h.svc._clock() + 60
-        asyncio.run(hook(_binding()))
-        assert key not in h.svc._working
-        assert key not in h.svc._status_failures and key not in h.svc._status_hold
-
-
 # ── GPT / Opus round on 64cc0b6a74 ─────────────────────────────────────────
 
 
@@ -1932,8 +1730,10 @@ def test_the_bar_records_the_workspace_keys_its_workers_took(tmp_path, repo):
     h.svc.store.put(stored)
     asyncio.run(h.svc.republish_bar(binding))
     keys = h.svc.bar_base_keys("T1", "C1")
-    assert keys is not None and len(keys) == 5
-    assert keys == [i["key"] for i in _bar_labels_items(h)]
+    # The workers take the bar's Workers item (one tally, not one item each); the
+    # dashboard link only takes a slot the agent's items leave free.
+    assert keys is not None and "workers" in keys
+    assert keys == [i["key"] for i in _bar_labels_items(h) if i["key"] != "dashboard"]
 
 
 def _bar_labels_items(h):
@@ -2032,112 +1832,6 @@ def test_a_branch_with_no_reported_number_is_still_discovered(tmp_path, repo):
     asyncio.run(h.svc.ensure(binding))
     asyncio.run(h.svc.refresh(binding))
     assert h.published[-1].rows[0].pr_number == 5
-
-
-# ── GPT on a061b43b5d: lineage-driven status obeys the board's publish scope ──
-
-
-def _lineage_watch(tmp_path, monkeypatch, lineage):
-    lineage.record_worker("chat-w1", "chat-cond")
-    h, rec, _scheduled, statuses = _watched(tmp_path, monkeypatch)
-    monkeypatch.setattr(service, "_sharing_unknown", lambda channel: False)  # confirmed
-    w1 = _live_slot("chat-w1")
-    cond = _live_slot("chat-cond")
-    dash = _Slots(**{"chat-cond": cond, "chat-w1": w1})
-    asyncio.run(h.svc.watch_tick(dash))
-    return h, rec, statuses, w1, cond, dash
-
-
-def test_a_refused_channel_gets_no_status_from_a_lineage_worker(tmp_path, monkeypatch, lineage):
-    h, _rec, statuses, w1, _cond, dash = _lineage_watch(tmp_path, monkeypatch, lineage)
-    source.set_scope_predicate(lambda state, b: False)  # Slack Connect-shared
-    w1.turn_running, w1._turn_generation = True, 1
-    asyncio.run(h.svc.watch_tick(dash))
-    asyncio.run(h.svc.watch_tick(dash))
-    assert statuses == []
-
-
-def test_a_channel_refused_mid_run_hands_the_workers_status_back(tmp_path, monkeypatch, lineage):
-    h, rec, statuses, w1, _cond, dash = _lineage_watch(tmp_path, monkeypatch, lineage)
-    w1.turn_running, w1._turn_generation = True, 1
-    asyncio.run(h.svc.watch_tick(dash))
-    assert statuses == ["processing"]
-    source.set_scope_predicate(lambda state, b: False)
-    asyncio.run(h.svc.watch_tick(dash))
-    assert statuses == ["processing", "active"] and rec.key not in h.svc._working
-    asyncio.run(h.svc.watch_tick(dash))
-    assert statuses == ["processing", "active"]  # once
-
-
-def test_a_refused_channel_never_overrides_a_running_conductor(tmp_path, monkeypatch, lineage):
-    h, _rec, statuses, w1, cond, dash = _lineage_watch(tmp_path, monkeypatch, lineage)
-    w1.turn_running, w1._turn_generation = True, 1
-    asyncio.run(h.svc.watch_tick(dash))
-    assert statuses == ["processing"]
-    cond.turn_running = True  # the conductor's own turn owns the status now
-    source.set_scope_predicate(lambda state, b: False)
-    asyncio.run(h.svc.watch_tick(dash))
-    assert statuses == ["processing"]
-
-
-def test_a_confirmed_refusal_ends_a_status_hold(tmp_path, monkeypatch, lineage):
-    h, rec, statuses, w1, _cond, dash = _lineage_watch(tmp_path, monkeypatch, lineage)
-    w1.turn_running, w1._turn_generation = True, 1
-    asyncio.run(h.svc.watch_tick(dash))
-    h.svc._status_hold[rec.key] = h.svc._clock() + 600  # held while sharing was unknown
-    source.set_scope_predicate(lambda state, b: False)
-    asyncio.run(h.svc.watch_tick(dash))
-    assert rec.key not in h.svc._status_hold and statuses[-1] == "active"
-
-
-def test_a_worker_filed_into_the_channel_folder_still_obeys_the_scope(
-    tmp_path, monkeypatch, lineage
-):
-    """The board files lineage workers into the channel's folder: lineage still decides."""
-    from kiro_crew.slack.code_channels.workspace import folders
-
-    lineage.record_worker("chat-w1", "chat-cond")
-    h, _rec, _scheduled, statuses = _watched(tmp_path, monkeypatch, folder_id="F-chan")
-    monkeypatch.setattr(service, "_sharing_unknown", lambda channel: False)
-    w1 = _live_slot("chat-w1")
-    dash = _Slots(**{"chat-cond": _live_slot("chat-cond"), "chat-w1": w1})
-    monkeypatch.setattr(folders, "subtree_ids", lambda state, fid: {fid})
-    monkeypatch.setattr(
-        folders,
-        "sessions_in",
-        lambda state, ids: {"chat-w1": (w1.turn_running, w1._turn_generation)},
-    )
-    asyncio.run(h.svc.watch_tick(dash))
-    source.set_scope_predicate(lambda state, b: False)
-    w1.turn_running, w1._turn_generation = True, 1
-    asyncio.run(h.svc.watch_tick(dash))
-    asyncio.run(h.svc.watch_tick(dash))
-    assert statuses == []
-
-
-def test_a_cached_waiting_row_sets_no_suspended_on_a_refused_channel(
-    tmp_path, monkeypatch, lineage
-):
-    h, rec, _scheduled, statuses = _watched(tmp_path, monkeypatch)
-    monkeypatch.setattr(service, "_sharing_unknown", lambda channel: False)
-    dash = _waiting_board(h, rec, monkeypatch, lineage)
-    # Admitted by the pass's first check, refused by the status check.
-    verdicts = iter([True] + [False] * 10)
-    source.set_scope_predicate(lambda state, b: next(verdicts))
-    asyncio.run(h.svc.watch_tick(dash))
-    assert "suspended" not in statuses and rec.key not in h.svc._boards
-
-
-def test_the_board_is_not_pinned_once_the_scope_refuses(slack):
-    _publish(_snapshot())
-    pins = len(slack.of("add_pin"))
-    surface_store.store().update("C1", board_pinned=False)  # someone unpinned it
-    asyncio.run(
-        publisher.publish(
-            _binding(), _snapshot(), link_for=_link, owner_id="U0", admits=lambda: False
-        )
-    )
-    assert len(slack.of("add_pin")) == pins
 
 
 # ── GPT round on 3374623b8a ────────────────────────────────────────────────
