@@ -969,18 +969,60 @@ def test_a_cancel_during_the_first_bar_write_rolls_the_items_back(
     assert [i["key"] for i in surface_store().get(CH).context_bar] == ["old"]
 
 
-def test_the_turn_start_reads_the_persons_text_not_the_runners_prepends() -> None:
+def test_the_turn_start_reads_the_persons_text_not_the_runners_prepends(
+    env: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A cancelled-turn preamble can quote an older /wrap-up prompt; only the
     person's own text decides which turn is the /wrap-up turn."""
-    import inspect
+    import contextlib
 
-    from kiro_crew.dashboard.chat_turn import turn_dispatch_gates
+    from turn_harness import SlotSpec, TurnContext, TurnScript, run_turn
 
-    src = inspect.getsource(turn_dispatch_gates)
-    call = src[src.index("notify_code_channel_turn_start(") :]
-    call = call[: call.index(")\n")]
-    assert "prompt=str(turn._jev_route_text" in call
-    assert "turn.message" not in call
+    import kiro_crew.context as context_mod
+    from kiro_crew.acp.types import EVENT_COMPLETE, STOP_REASON_END_TURN, AcpEvent
+    from kiro_crew.context import ContextBuilder
+    from kiro_crew.memory import MemoryStore
+    from kiro_crew.skills import SkillsLoader
+    from kiro_crew.slack.code_channels import hooks
+
+    binding = _bind(env)
+    monkeypatch.setattr(
+        context_mod, "build_cancelled_turn_preamble", lambda *_a, **_k: "/wrap-up (older)"
+    )
+    seen: list[str] = []
+
+    async def _record(_binding: Any, event: Any) -> None:
+        seen.append(str(event.prompt))
+
+    def _setup(ctx: TurnContext) -> None:
+        ctx.state.slack_client = env.slack
+        ctx.state.sessions.batched_save.side_effect = lambda: contextlib.nullcontext()
+        ctx.state.link_slack(SLOT, binding.anchor_ts, CH)
+        builder = ContextBuilder(
+            memory=MemoryStore(workspace=tmp_path / "ws"),
+            skills=SkillsLoader(skills_path=tmp_path / "skills", install_builtins=False),
+        )
+        # The preamble branch reads the builder's own log, and the runner reaches
+        # it only for a session the manager flags with ``prev_turn_cancelled``.
+        builder.conversation_log = ctx.state.conversation_log
+        ctx.state.context_builder = builder
+        ctx.state.sessions._sessions = {SESSION: SimpleNamespace(prev_turn_cancelled=True)}
+
+    hooks.on_turn_start(_record)
+    try:
+        asyncio.run(
+            run_turn(
+                TurnScript(
+                    events=[AcpEvent(kind=EVENT_COMPLETE, stop_reason=STOP_REASON_END_TURN)],
+                    message="what changed?",
+                    setup=_setup,
+                ),
+                slot=SlotSpec(key=SLOT),
+            )
+        )
+    finally:
+        hooks.remove_hook(_record)
+    assert seen == ["what changed?"]
 
 
 def test_a_wrap_up_posted_in_one_turn_leaves_a_newer_request_live(env: Any) -> None:
