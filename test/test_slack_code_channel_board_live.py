@@ -1105,10 +1105,15 @@ def _bar_labels(h):
     return [item["label"] for item in h.client.last("set_context_bar")["items"]]
 
 
+def _bar_keys(h):
+    return [item["key"] for item in h.client.last("set_context_bar")["items"]]
+
+
 def test_a_bar_sent_outside_a_refresh_never_re_sends_a_refused_cached_board(
     tmp_path, repo, monkeypatch
 ):
-    """The context bar lists the cached board's workers: re-checked like the wrap-up."""
+    """The context bar's Workers item comes from the cached board: re-checked like
+    the wrap-up (the bar names no worker; their tally is the board's)."""
     binding = _scoped_binding(repo)
     conductor = SimpleNamespace(key="chat-cond", _slack_channel="C1")
     monkeypatch.setattr(cc_binding, "bound_slot", lambda state, b: conductor)
@@ -1121,11 +1126,11 @@ def test_a_bar_sent_outside_a_refresh_never_re_sends_a_refused_cached_board(
     snap = model.BoardSnapshot(rows=(_row(title="Fix login", session_key="chat-w1"),))
     h.svc._boards[rec.key] = snap
     assert asyncio.run(h.svc.republish_bar(binding)) == ""
-    assert any("Fix login" in label for label in _bar_labels(h))  # admitted: shown
+    assert "workers" in _bar_keys(h)  # admitted: shown
     refusal["why"] = "the channel is shared with another organization"
     asyncio.run(h.svc.republish_bar(binding))
     assert rec.key not in h.svc._boards
-    assert not any("Fix login" in label for label in _bar_labels(h))
+    assert "workers" not in _bar_keys(h)
     # A turn start that re-sends the bar (no bar stored yet) checks the same scope.
     h.svc._boards[rec.key] = snap
     stored = h.svc.store.get("T1", "C1")
@@ -1133,7 +1138,71 @@ def test_a_bar_sent_outside_a_refresh_never_re_sends_a_refused_cached_board(
     h.svc.store.put(stored)
     asyncio.run(h.svc.ensure(binding))
     assert rec.key not in h.svc._boards
-    assert not any("Fix login" in label for label in _bar_labels(h))
+    assert "workers" not in _bar_keys(h)
+
+
+def test_the_bar_asks_the_scope_after_its_last_await_before_sending(tmp_path, repo, monkeypatch):
+    """The agent-item merge is a thread hop: a refusal landing in it still keeps
+    the Workers item off the bar that is sent."""
+    from kiro_crew.slack.code_channels import agent_bar
+
+    binding = _scoped_binding(repo)
+    conductor = SimpleNamespace(key="chat-cond", _slack_channel="C1")
+    monkeypatch.setattr(cc_binding, "bound_slot", lambda state, b: conductor)
+    monkeypatch.setattr(surface, "dashboard_state", lambda: object())
+    refusal = {"why": ""}
+    monkeypatch.setattr(source, "_publish_refusal", lambda state, b: refusal["why"])
+    h = _Harness(tmp_path)
+    source.set_scope_predicate(None)  # the production scope check
+    rec = asyncio.run(h.svc.ensure(binding))
+    h.svc._boards[rec.key] = model.BoardSnapshot(
+        rows=(_row(title="Fix login", session_key="chat-w1"),)
+    )
+    real_merge = agent_bar.merge_for_channel
+
+    def merge_then_refuse(items, channel_id):
+        refusal["why"] = "the channel is shared with another organization"
+        return real_merge(items, channel_id)
+
+    monkeypatch.setattr(agent_bar, "merge_for_channel", merge_then_refuse)
+    asyncio.run(h.svc.republish_bar(binding))
+    assert "workers" not in _bar_keys(h)
+    assert rec.key not in h.svc._boards
+
+
+def test_a_turn_starts_bar_never_re_sends_a_refused_cached_board(tmp_path, repo, monkeypatch):
+    """The turn start rebuilds the bar from its last state: the same scope check."""
+    binding = _scoped_binding(repo)
+    conductor = SimpleNamespace(key="chat-cond", _slack_channel="C1")
+    monkeypatch.setattr(cc_binding, "bound_slot", lambda state, b: conductor)
+    monkeypatch.setattr(surface, "dashboard_state", lambda: object())
+    refusal = {"why": ""}
+    monkeypatch.setattr(source, "_publish_refusal", lambda state, b: refusal["why"])
+    h = _Harness(tmp_path)
+    source.set_scope_predicate(None)  # the production scope check
+    rec = asyncio.run(h.svc.ensure(binding))
+    url = "https://github.com/acme/widgets/pull/7"
+    snap = model.BoardSnapshot(
+        rows=(
+            _row(
+                title="Fix login",
+                session_key="chat-w1",
+                pr_number=7,
+                pr_url=url,
+                pr_state="open",
+            ),
+        )
+    )
+    h.svc._boards[rec.key] = snap
+    assert asyncio.run(h.svc.republish_bar(binding)) == ""
+    items = h.client.last("set_context_bar")["items"]
+    assert "workers" in _bar_keys(h) and any(i.get("url") == url for i in items)
+    refusal["why"] = "the channel is shared with another organization"
+    asyncio.run(h.svc.on_turn_start(binding))  # Stop changes the set: a real send
+    items = h.client.last("set_context_bar")["items"]
+    assert "stop" in _bar_keys(h)
+    assert "workers" not in _bar_keys(h) and not any(i.get("url") == url for i in items)
+    assert rec.key not in h.svc._boards
 
 
 def test_a_refused_refresh_forgets_the_cached_board_even_when_the_pr_read_fails(
@@ -1762,9 +1831,20 @@ def test_a_diff_refusal_after_the_bar_went_out_resends_the_bar_without_workers(
 
     monkeypatch.setattr(h.svc, "_build_diff", build_then_share)
     source.set_scope_predicate(lambda state, b: admitted["now"])
+    published_admitted: list[bool] = []
+    real_publish = h.svc._publish_board
+
+    async def publish_board(b, snap):
+        published_admitted.append(admitted["now"])
+        return await real_publish(b, snap)
+
+    h.svc._publish_board = publish_board
     asyncio.run(h.svc.refresh(binding))
-    assert not any("Fix login" in label for label in _bar_labels(h))
-    assert h.published == []
+    assert "workers" not in _bar_keys(h)  # the bar re-sent after the refusal
+    # The board is published first (the bar links it), while still admitted;
+    # nothing goes out for the board after the refusal.
+    assert published_admitted in ([], [True])
+    assert h.svc.board("T1", "C1") is None
 
 
 def test_a_failed_channel_only_rebuild_takes_the_worker_tab_down(tmp_path, repo, monkeypatch):
