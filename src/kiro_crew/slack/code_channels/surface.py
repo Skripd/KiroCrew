@@ -14,6 +14,10 @@ Three parts, each in its own module, wired here:
   archive that follows a click.
 * :mod:`.agent_picker` -- the kickoff's agent picker and ``/kirocrew agent``,
   which switch the channel's session through the dashboard's agent switch.
+* :mod:`.actions` -- the context bar's Create PR and Stop buttons
+  (``code_channel_action``), each running the path its command or button runs.
+* :mod:`.comments` -- plan-canvas comments read back into the session.
+* :mod:`.views` -- the view tabs at Slack's five-tab cap.
 
 Everything here is inert while the code-channel gate
 (:func:`.binding.code_channels_on`) is shut: the hooks fire only for a bound
@@ -45,12 +49,14 @@ def install(slack_provider: Callable[[], Any]) -> None:
     _slack_provider = slack_provider
     if _INSTALLED:
         return
-    from kiro_crew.slack.code_channels import commands, hooks, wrapup
+    from kiro_crew.slack.code_channels import commands, comments, hooks, wrapup
 
     hooks.on_turn_start(commands.on_turn_start)
     # First: a /wrap-up arriving while a turn starts must see that turn as earlier.
     hooks.on_turn_start(wrapup.on_turn_start, first=True)
     hooks.on_turn_end(wrapup.on_turn_end)
+    hooks.on_turn_end(comments.on_turn_end)
+    comments.start_poll()
     _INSTALLED = True
 
 
@@ -206,6 +212,75 @@ async def outbound_permitted() -> bool:
     return await channel_outbound_permitted("slack")
 
 
+async def write_refusal(
+    channel_id: str,
+    binding: Binding | None = None,
+    *,
+    activation: bool = False,
+    scope: Callable[[], bool] | None = None,
+) -> str:
+    """THE write gate for this package's Slack writes: ``""`` when one may go out NOW.
+
+    Otherwise why not: ``channels_policy`` (the ``channels`` governance policy
+    denies Slack), ``archived``, ``stopped`` (Slack's own Stop: no ``agents.*``
+    call or post until the channel's next turn), ``channel_off`` (with
+    *activation*: the code channel or its origin is Off or in Review, or the
+    config cannot be read; needs *binding*) or
+    ``out_of_scope`` (*scope*, the board's scope check for a write that carries
+    worker content).
+
+    Its one await, the policy read, comes FIRST and every other condition is read
+    after it synchronously, so a caller that sends right after awaiting this has
+    no await between the decision and the write: nothing that changes meanwhile
+    (a policy deny, an archive, a Stop, an Off) can slip through.
+    """
+    if not await outbound_permitted():
+        return "channels_policy"
+    return write_refusal_now(channel_id, binding, activation=activation, scope=scope)
+
+
+def write_refusal_now(
+    channel_id: str,
+    binding: Binding | None = None,
+    *,
+    activation: bool = False,
+    scope: Callable[[], bool] | None = None,
+) -> str:
+    """:func:`write_refusal` without the policy read (it must run just before). Fails closed."""
+    try:
+        if _archived_now(channel_id, binding):
+            return "archived"
+        if channel_stopped(channel_id):
+            return "stopped"
+        if activation:
+            from kiro_crew.slack.code_channels.binding import live_config
+
+            cfg = live_config()  # read now, after the policy await
+            if binding is None or cfg is None or not channel_admits(cfg, binding):
+                return "channel_off"
+        if scope is not None and not scope():
+            return "out_of_scope"
+    except Exception:
+        logger.debug("code channel %s: write gate failed", channel_id, exc_info=True)
+        return "error"
+    return ""
+
+
+def _archived_now(channel_id: str, binding: Binding | None) -> bool:
+    """Archived by this process, or stamped on the binding as it stands now.
+
+    The stamp is read from the store's loaded bindings (in memory, no disk),
+    not only from the caller's copy, which may predate the archive: the
+    in-process fence is lifted once the stamp is written.
+    """
+    if channel_id in _archived_here or (binding is not None and binding.archived_at):
+        return True
+    for loaded in store().loaded_bindings() or ():
+        if loaded.channel_id == channel_id:
+            return bool(loaded.archived_at)
+    return False
+
+
 def channel_admits(cfg: Any, binding: Binding) -> bool:
     """The code channel and its origin admit the bot (off or review mode refuse).
 
@@ -222,7 +297,26 @@ def channel_stopped(channel_id: str) -> bool:
     """Whether Slack's Stop silenced a turn of *channel_id* that is still unwinding.
 
     Slack's rule after ``agent_session_stopped``: no further posts and no
-    ``agents.*`` calls for that context.
+    ``agents.*`` calls for that context. True as well from Slack's own Stop of
+    the whole channel until the next turn starts (:func:`.status.is_quiet`).
+    """
+    try:
+        from kiro_crew.slack.code_channels.status import is_quiet
+
+        if is_quiet(channel_id):
+            return True
+    except Exception:
+        return False
+    return turn_unwinding(channel_id)
+
+
+def turn_unwinding(channel_id: str) -> bool:
+    """Whether a turn of *channel_id* that Slack's Stop stopped is still unwinding.
+
+    Narrower than :func:`channel_stopped`: false again once that turn is gone,
+    even before the channel's next turn. For work that goes on after the
+    channel session's Stop and waits on a person (a worker's tool approval): a
+    card it needs must still reach the channel, or the worker waits unseen.
     """
     try:
         from kiro_crew.slack.agent_sessions import fence
