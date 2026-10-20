@@ -208,10 +208,16 @@ class AgentSessionStatus:
         the turn-end settle deliberately skips it. A channel this driver left on
         ``processing`` would otherwise stay on Slack's loader until Slack's own
         timeout, so a settle is let through when THIS driver's own record for the
-        key is ``processing``; a ``processing`` write still needs the gate.
+        key is ``processing``; a ``processing`` write still needs the gate. The
+        same holds for a ``suspended`` this driver set (a session waiting on a
+        person when the gate closed): Slack never clears it, so the settle to
+        ``active`` goes through too. No working state is ever written gate-closed.
         """
         record = self._records.get(key)
-        return record is not None and record.status == SESSION_STATUS_PROCESSING
+        return record is not None and record.status in (
+            SESSION_STATUS_PROCESSING,
+            SESSION_STATUS_SUSPENDED,
+        )
 
     async def set_status(self, channel: str, thread_ts: str | None, status: str) -> bool:
         """Move one session to *status*; False when the old path should run instead.

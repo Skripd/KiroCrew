@@ -541,9 +541,12 @@ async def _set_context_bar(call: Call, args: dict[str, Any]) -> str:
     await surface_update(channel, context_bar=items)
     service = getattr(workspace, "_SERVICE", None)
 
+    alone = {"yes": False}
+
     async def publish() -> None:
         result = await service.republish_bar(call.binding) if service is not None else None
         if result is None:
+            alone["yes"] = True  # the bar holds the agent's items only
             # No workspace record to publish from: the bar is the agent's items alone.
             merged, _ = agent_bar.merge([], items)
             await call.client.set_context_bar(channel, merged)
@@ -565,7 +568,18 @@ async def _set_context_bar(call: Call, args: dict[str, Any]) -> str:
             publishing.result()  # re-raises the publish's own error
     if cancelled:
         raise asyncio.CancelledError
-    base_keys = await asyncio.to_thread(_workspace_keys, call.binding)
+    # The workspace's items as the bar was just built (its workers included), so
+    # an agent item the workers pushed out is reported as not shown.
+    built: list[str] | None
+    if alone["yes"]:
+        built = []  # no workspace items were published beside the agent's
+    elif service is not None and hasattr(service, "bar_base_keys"):
+        built = service.bar_base_keys(call.binding.team_id, channel)
+    else:
+        built = None
+    base_keys = (
+        built if built is not None else await asyncio.to_thread(_workspace_keys, call.binding)
+    )
     _, dropped = agent_bar.merge([{"key": k} for k in base_keys], items)
     shown = [i["key"] for i in items if i["key"] not in dropped]
     if not items:
