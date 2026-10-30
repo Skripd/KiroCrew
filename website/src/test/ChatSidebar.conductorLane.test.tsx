@@ -1555,10 +1555,10 @@ describe('chat sidebar — conductor lane', () => {
       const lane = getByTestId('conductor-view-lane')
       const anchor = lane.querySelector('[data-session-row="member-pipeline"]') as HTMLElement
       expect(anchor.getAttribute('data-draggable')).toBe('false')
-      expect(anchor.getAttribute('title') ?? '').toMatch(/Members page/)
+      expect(anchor.getAttribute('title') ?? '').toMatch(/Jams page/)
       // The destination is also VISIBLE text, not hover-only: a touch reader gets no
       // title, and a page jump with no cue on the row is unexplained.
-      expect(anchor.querySelector('[data-testid="members-page-chip"]')?.textContent).toBe('Members page')
+      expect(anchor.querySelector('[data-testid="members-page-chip"]')?.textContent).toBe('Jams page')
       expect(anchor.querySelector('[data-close]')).toBeNull()
       expect(anchor.querySelector('[data-fork]')).toBeNull()
       // A listed worker beside it keeps everything, and wears no destination chip.
@@ -1583,7 +1583,7 @@ describe('chat sidebar — conductor lane', () => {
         expect(face.querySelector('svg, img')).not.toBeNull()
         expect(title.textContent).toBe('kirocrew-pipeline-conductor')
         expect(anchor.querySelector('[data-testid="members-page-chip"]')).toBeNull()
-        expect(anchor.querySelector('[data-testid="members-page-sr"]')?.textContent).toBe('Members page')
+        expect(anchor.querySelector('[data-testid="members-page-sr"]')?.textContent).toBe('Jams page')
         // The click still lands on the Members page.
         fireEvent.click(anchor)
         expect(mocks.navigate).toHaveBeenCalledWith('/members?member=kirocrew-pipeline-conductor')
@@ -1625,7 +1625,7 @@ describe('chat sidebar — conductor lane', () => {
         await act(async () => { await mocks.lastMembers })
         expect(mocks.membersCalls).toBeGreaterThan(0)
         const anchor = getByTestId('conductor-view-lane').querySelector('[data-session-row="member-pipeline"]') as HTMLElement
-        expect(anchor.querySelector('[data-testid="members-page-chip"]')?.textContent).toBe('Members page')
+        expect(anchor.querySelector('[data-testid="members-page-chip"]')?.textContent).toBe('Jams page')
         expect(document.querySelector('[data-testid="sidebar-member-roster-error"]')).toBeNull()
         expect(container.querySelector('[role="alert"]')).toBeNull()
       } finally {
@@ -1673,7 +1673,7 @@ describe('chat sidebar — conductor lane', () => {
         await waitFor(() => expect(mocks.lastMembers).not.toBeNull())
         await act(async () => { await mocks.lastMembers })
         const anchor = getByTestId('conductor-view-lane').querySelector('[data-session-row="member-pipeline"]') as HTMLElement
-        expect(anchor.querySelector('[data-testid="members-page-chip"]')?.textContent).toBe('Members page')
+        expect(anchor.querySelector('[data-testid="members-page-chip"]')?.textContent).toBe('Jams page')
         expect(queryByTestId('member-row-face')).toBeNull()
       } finally {
         mocks.roster = []
