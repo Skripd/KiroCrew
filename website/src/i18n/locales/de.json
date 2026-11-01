@@ -14313,7 +14313,11 @@
         "crew_mode": "Ultra Mode",
         "crew_mode_desc": "Lässt einen Chat Aufgaben an eine Crew übergeben und sie auf einem Board verfolgen.",
         "explore": "Entdecken",
-        "explore_desc": "Fügt Entdecken zur oberen Leiste hinzu: Funktionen zum Ausprobieren, dein Fortschritt und eine Karte „Heute ausprobieren“ in einem neuen Chat."
+        "explore_desc": "Fügt Entdecken zur oberen Leiste hinzu: Funktionen zum Ausprobieren, dein Fortschritt und eine Karte „Heute ausprobieren“ in einem neuen Chat.",
+        "remote_dispatch": "Remote-Dispatch",
+        "remote_dispatch_desc": "Schickt Aufgaben aus dem Ultra Mode an deine anderen verbundenen Rechner (Settings > Remote Crew). Ist keiner frei, wartet die Aufgabe auf dem Board dieses Chats, bis du sie erneut sendest. Ist dies an, können Aufgaben, die dein Haupt-Chat verteilt, auf einem anderen verbundenen Rechner laufen.",
+        "remote_dispatch_save_failed": "Remote-Dispatch konnte nicht gespeichert werden. Versuch es noch einmal.",
+        "remote_dispatch_load_failed": "Die Remote-Dispatch-Einstellung konnte nicht gelesen werden."
       },
       "kasBundleCard": {
         "toggle_label": "KAS mit der eigenen Engine von {{productName}} ausführen",

@@ -1998,6 +1998,19 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     }
   },
   {
+    "id": "developer.remote-dispatch",
+    "label": "Remote dispatch",
+    "labelKey": "pages.developer.featurePreviewsTab.remote_dispatch",
+    "description": "Sends Ultra Mode tasks to your other connected machines (Settings > Remote Crew). If none is free, the task waits on this chat's Board until you resend it. With this on, tasks your main chat sends out may run on another connected machine.",
+    "tab": "developer",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "sub": "feature-previews"
+    },
+    "configKey": "work_ledger.remote_dispatch"
+  },
+  {
     "id": "developer.reply-threads-on-mate-chat-messages",
     "label": "Reply threads on mate chat messages",
     "labelKey": "pages.settings.crewmatesSection.reply_threads",

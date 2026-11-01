@@ -9459,7 +9459,11 @@
         "crew_mode": "Ultra Mode",
         "crew_mode_desc": "Lets a chat hand tasks to a crew and track them on a Board.",
         "explore": "Explore",
-        "explore_desc": "Adds Explore to the top bar: features to try, your progress, and a Try today card on a new chat."
+        "explore_desc": "Adds Explore to the top bar: features to try, your progress, and a Try today card on a new chat.",
+        "remote_dispatch": "Remote dispatch",
+        "remote_dispatch_desc": "Sends Ultra Mode tasks to your other connected machines (Settings > Remote Crew). If none is free, the task waits on this chat's Board until you resend it. With this on, tasks your main chat sends out may run on another connected machine.",
+        "remote_dispatch_save_failed": "Could not save remote dispatch. Try again.",
+        "remote_dispatch_load_failed": "Could not read the remote dispatch setting."
       },
       "kasBundleCard": {
         "toggle_label": "Run KAS on {{productName}}'s own engine",

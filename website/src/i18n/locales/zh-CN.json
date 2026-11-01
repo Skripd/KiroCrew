@@ -14029,7 +14029,11 @@
         "crew_mode": "Ultra Mode",
         "crew_mode_desc": "让一个对话把任务交给一个团队，并在看板里跟踪它们。",
         "explore": "探索",
-        "explore_desc": "在顶栏加入探索：可试用功能、你的进度，以及新聊天里的“今天试试”卡片。"
+        "explore_desc": "在顶栏加入探索：可试用功能、你的进度，以及新聊天里的“今天试试”卡片。",
+        "remote_dispatch": "远程派发",
+        "remote_dispatch_desc": "把 Ultra Mode 任务发送到你连接的其他机器（Settings > Remote Crew）。如果都没有空闲，任务会在本聊天的 Board 上等待，直到你重新发送。开启后，你的主对话 派出的任务可能在另一台已连接机器上运行。",
+        "remote_dispatch_save_failed": "无法保存远程派发设置。请重试。",
+        "remote_dispatch_load_failed": "无法读取远程派发设置。"
       },
       "kasBundleCard": {
         "toggle_label": "用 {{productName}} 自带的引擎运行 KAS",
