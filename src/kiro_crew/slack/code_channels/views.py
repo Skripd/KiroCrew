@@ -81,6 +81,11 @@ async def _refusal(channel_id: str, admits: Admits | None) -> str:
         return CHANNEL_OFF
 
 
+#: What a view write raises when the caller's own fence refused it at the cap
+#: (no removal was made; the caller's pre-send check, not Slack, said no).
+FENCED = "fenced"
+
+
 def _stopped(channel_id: str) -> bool:
     from kiro_crew.slack.code_channels import surface
 
@@ -160,13 +165,9 @@ _record_locks: dict[str, asyncio.Lock] = {}
 
 
 def _record_lock(channel_id: str) -> asyncio.Lock:
-    lock = _record_locks.get(channel_id)
-    if lock is None:
-        if len(_record_locks) > 4096:
-            for key in [k for k, v in _record_locks.items() if not v.locked()]:
-                _record_locks.pop(key, None)
-        lock = _record_locks[channel_id] = asyncio.Lock()
-    return lock
+    # Never pruned: one per code channel (a bounded set), and a lock dropped
+    # between its release and its next waiter's wake-up would let two writers in.
+    return _record_locks.setdefault(channel_id, asyncio.Lock())
 
 
 def _stamp(view: dict[str, Any]) -> float:
@@ -292,10 +293,11 @@ _locks: dict[str, asyncio.Lock] = {}
 
 
 def _lock(channel_id: str) -> asyncio.Lock:
-    """The channel's view lock: every view upsert by a tool, and every eviction."""
-    if len(_locks) > 4096:
-        for key in [k for k, v in _locks.items() if not v.locked()]:
-            _locks.pop(key, None)
+    """The channel's view lock: every view upsert by a tool, and every eviction.
+
+    Never pruned, like :func:`_record_lock`: a lock dropped between its release
+    and its next waiter's wake-up would let two writers into one channel.
+    """
     return _locks.setdefault(channel_id, asyncio.Lock())
 
 
