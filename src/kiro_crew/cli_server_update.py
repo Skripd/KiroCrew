@@ -590,8 +590,13 @@ def _update(force: bool = False) -> None:
     print("  🔄 Checking Node.js…")
     _ensure_node(proj)
 
-    # Build the dashboard frontend assets (npm), then reinstall the package.
-    build_frontend_sync(Path(proj))
+    # Build the dashboard frontend assets (npm), then reinstall the package. A
+    # failed build stops here like a failed install below: restarting onto the
+    # new backend would serve it the previous bundle.
+    build = build_frontend_sync(Path(proj))
+    if build.outcome == "failed":
+        print(f"  ❌ {build.failure_message()}")
+        sys.exit(1)
 
     # Install the pulled revision into this CLI's own venv. `kirocrew update` is
     # itself run FROM the console script pip would have to rewrite, so on Windows

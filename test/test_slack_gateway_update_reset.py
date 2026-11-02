@@ -29,6 +29,7 @@ from slack_gateway_helpers import (
     _within_lost_run,
 )
 
+from kiro_crew.frontend import FrontendBuildResult
 from kiro_crew.slack import gateway as gw
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -538,6 +539,7 @@ class TestAutoApplyUpdateResetPath:
 
         async def _build(*_a, **_k):
             seen.append(update_ownership.current_owner())
+            return FrontendBuildResult("built")
 
         def _sync(*_a, **_k):
             seen.append(update_ownership.current_owner())
@@ -577,6 +579,44 @@ class TestAutoApplyUpdateResetPath:
         await self._run_git_apply(orch, sync=lambda *a, **k: gw.dep_sync.REFUSED)
 
         assert update_ownership.restart_refusal() is not None
+
+    @pytest.mark.asyncio
+    async def test_a_failed_frontend_build_stays_up_without_installing(self, tmp_path):
+        """A restart would pair the new backend with the previous bundle."""
+        from kiro_crew import update_ownership
+
+        orch = _make_orchestrator()
+        ds = _mock_dashboard_state()
+        orch.dashboard_state = ds
+        orch.sessions = _mock_sessions()
+        orch._restart_after_update = AsyncMock()
+        log_path = tmp_path / "frontend-build.log"
+        build = AsyncMock(return_value=FrontendBuildResult("failed", log_path, "vite: failed"))
+        installs: list[object] = []
+
+        await self._run_git_apply(orch, build=build, sync=lambda *a, **k: installs.append(a) or 0)
+
+        assert installs == []
+        orch._restart_after_update.assert_not_awaited()
+        assert "frontend build" in (update_ownership.restart_refusal() or "")
+        errors = [c.args[1] for c in ds.push_update_progress.call_args_list if c.args[0] == "error"]
+        assert len(errors) == 1 and str(log_path) in errors[0]
+
+    @pytest.mark.asyncio
+    async def test_a_skipped_frontend_build_still_installs_and_restarts(self):
+        from kiro_crew import update_ownership
+
+        orch = _make_orchestrator()
+        orch.dashboard_state = _mock_dashboard_state()
+        orch.sessions = _mock_sessions()
+        orch._restart_after_update = AsyncMock()
+
+        await self._run_git_apply(
+            orch, build=AsyncMock(return_value=FrontendBuildResult("skipped"))
+        )
+
+        orch._restart_after_update.assert_awaited_once()
+        assert update_ownership.restart_refusal() is None
 
     @pytest.mark.asyncio
     async def test_a_later_update_that_fails_before_the_reset_keeps_the_refusal(self):
@@ -671,6 +711,7 @@ class TestAutoApplyUpdateResetPath:
         async def _build(*_a, **_k):
             # From here on the reinstall goes to the saturated pool.
             monkeypatch.setattr(gw, "subprocess_executor", lambda: pool)
+            return FrontendBuildResult("built")
 
         # The update ahead of the reinstall makes about nine executor hops; count
         # them (submitted and finished) so the wait below can tell slow from stuck.

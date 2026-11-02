@@ -184,6 +184,11 @@ NON_EGRESS_REDACTION_MODULES: frozenset[str] = frozenset(
         # credential from being split by the cut and surviving in halves.
         "platform/wheel_engine.py",
         "platform/wheel_engine_build_child.py",
+        # Same shape for a source install: redacts the tail of the npm build log
+        # (an install can echo a registry URL carrying credentials) before it
+        # becomes the failure message that the update paths show on their
+        # progress card or print. Scrubbing at capture, not an output boundary.
+        "frontend.py",
         # Same shape: redacts the unparseable LLM decomposition response before
         # writing the diagnostic ERROR line to the gateway log. Defensive log
         # hygiene so a response echoing a credential or exfiltration URL cannot

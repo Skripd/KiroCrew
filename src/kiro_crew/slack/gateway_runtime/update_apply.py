@@ -759,12 +759,24 @@ async def _auto_apply_update(self: GatewayOrchestrator, *, mandatory: bool = Fal
         # serves the latest bundle. Graceful no-op if no website/ or npm.
         if self.dashboard_state:
             self.dashboard_state.push_update_progress("building", "Building frontend…")
-        await build_frontend_async(
+        build = await build_frontend_async(
             proj,
             push_progress=(
                 self.dashboard_state.push_update_progress if self.dashboard_state else None
             ),
         )
+        if build.outcome == "failed":
+            # static/dist still holds the previous bundle, and a restart would
+            # pair it with the new backend. Stay up like the pip failure below,
+            # and keep the stale-asset watchdog from taking the restart instead.
+            update_ownership.refuse_restart(
+                "the frontend build after the git auto-update did not complete"
+            )
+            message = build.failure_message()
+            logger.error("Auto-update: %s", message)
+            if self.dashboard_state:
+                self.dashboard_state.push_update_progress("error", message)
+            return
 
         if self.dashboard_state:
             self.dashboard_state.push_update_progress("building", "Rebuilding package…")
