@@ -111,7 +111,12 @@ from kiro_crew.mcp_cleanup import (
     KIROCREW_BIN_MCP_SERVERS,
     MCP_REGISTRY_TYPE,
     mcp_entry_is_muted,
-    mcp_entry_is_registry_governed,
+)
+from kiro_crew.mcp_oauth_projection import (
+    oauth_lost_keys,
+    registry_withheld,
+    servers_with_discarded_oauth,
+    withhold_oauth,
 )
 from kiro_crew.platform.governance import may_grant_builtin_at_gate_now, may_skip_gate_now
 from kiro_crew.platform.tool_names import (
@@ -225,7 +230,10 @@ SPEC_KEYS_WITHOUT_CARRIER = UNSUPPORTED_SPEC_KEYS - {"hooks", "toolsSettings"}
 
 
 def spec_keys_without_carrier(
-    spec: dict[str, Any], *, translates_tools_settings: bool = False
+    spec: dict[str, Any],
+    *,
+    translates_tools_settings: bool = False,
+    discards_mcp_oauth: bool = False,
 ) -> list[str]:
     """What *spec* sets that the session runs without, sorted.
 
@@ -233,8 +241,14 @@ def spec_keys_without_carrier(
     whole too, unless *translates_tools_settings* says this session receives its
     ``permissions`` translation (KAS only); then each ``toolsSettings.<tool>.<key>``
     the translation cannot carry is named instead.
+
+    *discards_mcp_oauth* says this session's backend drops a remote MCP server's
+    ``oauth`` block (KAS only); each declared server that sets one is then named
+    as ``mcpServers.<name>.oauth``.
     """
     lost = [k for k in SPEC_KEYS_WITHOUT_CARRIER if spec.get(k)]
+    if discards_mcp_oauth:
+        lost.extend(oauth_lost_keys(servers_with_discarded_oauth(spec, _registry_governed)))
     tools_settings = spec.get("toolsSettings")
     if not translates_tools_settings:
         if tools_settings:
@@ -743,8 +757,7 @@ def _project_mcp_servers(
                 ),
             )
             continue
-        marked = mcp_entry_is_registry_governed(entry)
-        if not managed and (registry_mode or marked):
+        if registry_withheld(name, entry, registry_mode):
             logger.info(
                 "agent %r: withholding MCP server %r — %s",
                 agent_id,
@@ -791,6 +804,7 @@ def _project_mcp_servers(
             continue
         projected = {k: v for k, v in entry.items() if k not in _WRAPPER_MARKERS}
         projected.pop("autoApprove", None)
+        withhold_oauth(projected, agent_id=agent_id, name=name, logger=logger)
         discarded = [k for k in _KAS_DISCARDED_ENTRY_KEYS if projected.get(k)]
         if discarded:
             # Read off the PROJECTED entry, not the spec's: a key this function

@@ -579,7 +579,11 @@ def spec_project_dir(provider: object) -> str | None:
 
 
 def crew_fired_spec_hooks(
-    agent_id: str, project_dir: str | None = None, *, translates_tools_settings: bool = False
+    agent_id: str,
+    project_dir: str | None = None,
+    *,
+    translates_tools_settings: bool = False,
+    discards_mcp_oauth: bool = False,
 ) -> tuple[list[ScriptHook], list[str], int]:
     """The active agent spec's hooks as script hooks, the keys nothing carries, and
     how many ``confirm: true`` hooks are skipped.
@@ -591,7 +595,8 @@ def crew_fired_spec_hooks(
     cannot be read; the caller fails PreToolUse closed on that. *project_dir* is
     :func:`spec_project_dir` of the session. *translates_tools_settings* is true
     only for a KAS session, the one backend that receives ``toolsSettings`` as
-    ``permissions`` rules.
+    ``permissions`` rules. *discards_mcp_oauth* is true only for a KAS session too,
+    the backend that drops a remote MCP server's ``oauth`` block.
     """
     # circular import: the ACP layer imports the config loader, which sits below
     # this module; resolved at call time like the other driver seams here.
@@ -599,7 +604,11 @@ def crew_fired_spec_hooks(
 
     spec, origin = _agent_spec_with_origin(agent_id, project_dir)
     hooks, unconfirmable = _convert(agent_id, spec)
-    lost = spec_keys_without_carrier(spec, translates_tools_settings=translates_tools_settings)
+    lost = spec_keys_without_carrier(
+        spec,
+        translates_tools_settings=translates_tools_settings,
+        discards_mcp_oauth=discards_mcp_oauth,
+    )
     # Copies, so the cached conversion keeps no origin: the same hooks can come
     # from a user-level spec in one session and a project spec in another.
     tagged = [dataclasses.replace(h, spec_origin=origin) for h in hooks]

@@ -177,6 +177,7 @@ async def _prepare_spec_hooks(
         # Whose hooks apply is unknown, so PreToolUse fails closed.
         logger.warning("no agent is known for this KAS session; tool calls are blocked")
         return [], True, work_dir
+    on_kas = capabilities_of(client).backend == ACP_BACKEND_KAS
     try:
         hooks, lost, unconfirmable = await asyncio.to_thread(
             functools.partial(
@@ -184,7 +185,9 @@ async def _prepare_spec_hooks(
                 agent,
                 spec_project_dir(client),
                 # Only KAS receives `toolsSettings` as `permissions` rules.
-                translates_tools_settings=capabilities_of(client).backend == ACP_BACKEND_KAS,
+                translates_tools_settings=on_kas,
+                # Only KAS drops a remote MCP server's `oauth` block.
+                discards_mcp_oauth=on_kas,
             )
         )
     except Exception:  # noqa: BLE001 - the caller fails PreToolUse closed
