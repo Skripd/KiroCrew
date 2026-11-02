@@ -73,6 +73,11 @@ def _admitted(admits: Admits | None) -> bool:
         return False
 
 
+#: What a view write raises when the caller's own fence refused it at the cap
+#: (no removal was made; the caller's pre-send check, not Slack, said no).
+FENCED = "fenced"
+
+
 def _stopped(channel_id: str) -> bool:
     from kiro_crew.slack.code_channels import surface
 
@@ -383,8 +388,14 @@ async def write_view(
             raise
         removed = await make_room(client, channel_id, for_key=key, admits=admits, fence=fence)
         if not removed:
+            # Nothing removed because Slack's Stop or the caller's fence said no:
+            # that is the answer, not "the channel is full".
+            if _stopped(channel_id):
+                raise CodeChannelApiError("agents.conversations.setView", STOPPED) from None
             if not _admitted(admits):
                 raise CodeChannelApiError("agents.conversations.setView", CHANNEL_OFF) from None
+            if fence is not None and not await _fenced(fence):
+                raise CodeChannelApiError("agents.conversations.setView", FENCED) from None
             raise
         if _stopped(channel_id):
             # Slack's Stop landed while room was made: nothing more is sent.
