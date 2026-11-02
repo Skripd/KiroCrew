@@ -542,6 +542,10 @@ async def _publish_canvas_locked(call: Call, channel: str, markdown: str, title:
                 view_note += f" To make room, your older view {removed!r} was removed."
         except CodeChannelApiError as exc:
             logger.info("code channel %s: plan tab not attached: %s", channel, exc.code)
+            if exc.code == views.STOPPED:
+                # Slack's Stop silenced the channel while room was made: said as
+                # such (the canvas content itself is already saved).
+                raise
             if exc.code == views.TOO_MANY_VIEWS:
                 view_note = " " + PLAN_TAB_FULL_TEXT
     verb = "Created" if created else "Updated"

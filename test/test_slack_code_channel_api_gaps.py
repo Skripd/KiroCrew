@@ -867,7 +867,7 @@ async def test_slacks_stop_while_making_room_sends_no_removal_or_view(
             raise CodeChannelApiError("agents.conversations.setView", views.TOO_MANY_VIEWS)
         return "Vnew"
 
-    async def room(client: Any, channel_id: str, *, for_key: str) -> str:
+    async def room(client: Any, channel_id: str, *, for_key: str, fence: Any = None) -> str:
         status.quiet_after_stop(CH)  # room was made, then Slack's Stop
         return "old"
 

@@ -433,11 +433,18 @@ async def publish(binding: Any, snapshot: Any) -> str:
 
         # A Stop from the Workers tab shows within seconds: both edit gaps are
         # skipped once for the publish that first carries it.
+        # Only a stop still showing (its worker not yet on a newer turn) may
+        # spend the mark; a stale overlay is dropped here and again at each render.
+        snapshot = stops.reconcile(snapshot, state)
         urgent = stops.take_urgent(
             r.session_key for r in getattr(snapshot, "rows", ()) if getattr(r, "stopped", False)
         )
         await tabs.publish_workers(binding, snapshot, link_for=link_for, code=code, urgent=urgent)
         linked = tabs.tabs_for(await get_async(channel), channel, code=code)
+        if snapshot is not None and not source.scope_admits(state, binding):
+            # Asked again after the Workers tab's awaits: the scope may have
+            # changed since the check above.
+            return "out_of_scope"
         return await publisher.publish(
             binding,
             snapshot,

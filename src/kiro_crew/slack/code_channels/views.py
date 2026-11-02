@@ -55,6 +55,9 @@ logger = logging.getLogger(__name__)
 #: What a view write refused by Slack's own Stop raises (no agents.* call
 #: for the channel until its next turn).
 STOPPED = "stopped"
+#: What a view write raises when the caller's own fence refused it at the cap
+#: (no removal was made; the caller's pre-send check, not Slack, said no).
+FENCED = "fenced"
 
 
 def _stopped(channel_id: str) -> bool:
@@ -351,6 +354,12 @@ async def write_view(
             raise
         removed = await make_room(client, channel_id, for_key=key, fence=fence)
         if not removed:
+            # Nothing removed because Slack's Stop or the caller's fence said no:
+            # that is the answer, not "the channel is full".
+            if _stopped(channel_id):
+                raise CodeChannelApiError("agents.conversations.setView", STOPPED) from None
+            if fence is not None and not await _fenced(fence):
+                raise CodeChannelApiError("agents.conversations.setView", FENCED) from None
             raise
         if _stopped(channel_id):
             # Slack's Stop landed while room was made: nothing more is sent.
