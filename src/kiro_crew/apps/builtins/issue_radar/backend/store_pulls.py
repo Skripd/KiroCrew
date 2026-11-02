@@ -13,6 +13,7 @@ from pathlib import Path
 
 from kiro_crew import platform_compat
 from kiro_crew.atomic_write import atomic_write, read_bytes_with_retry
+from kiro_crew.owner_only_files import OWNER_ONLY_FILE_MODE
 
 from .store_issues import _read_list_snapshot
 from .store_repos import repo_data_dir
@@ -65,7 +66,7 @@ def _pulls_cache_lock(owner: str, repo: str, root: Path | None, state: str):
     path = pulls_cache_path(owner, repo, root, state)
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(".json.lock")
-    lock_path.touch(exist_ok=True)
+    lock_path.touch(mode=OWNER_ONLY_FILE_MODE, exist_ok=True)
     with open(lock_path, "r+") as fd:
         with platform_compat.file_lock(fd.fileno(), exclusive=True):
             yield

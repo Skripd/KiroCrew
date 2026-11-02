@@ -34,6 +34,7 @@ from kiro_crew.apps.manager import _DEPS_STAGING_SWEEP_RE
 from kiro_crew.apps.manifest import REQUIREMENTS_TXT_MAX_BYTES, requirements_in_tree
 from kiro_crew.apps.registry import minimal_env
 from kiro_crew.atomic_write import atomic_write
+from kiro_crew.owner_only_files import OWNER_ONLY_FILE_MODE
 from kiro_crew.sandbox import cgroup_scope_argv, run_limited, wrap_argv
 from kiro_crew.security import redact_credentials, redact_exfiltration_urls
 from kiro_crew.sel import sel
@@ -572,7 +573,9 @@ def provision_app_deps(app_name: str, root: Path) -> str:
             # macOS; the shared helper elects one creator, then lets contenders
             # open its existing inode, and never recreates a lock that
             # disappears before the reopen.
-            lfd = platform_compat.open_create_or_existing(lock_name, lflags, 0o644, dir_fd=pin.fd)
+            lfd = platform_compat.open_create_or_existing(
+                lock_name, lflags, OWNER_ONLY_FILE_MODE, dir_fd=pin.fd
+            )
             with os.fdopen(lfd, "r+") as lf:
                 with platform_compat.file_lock(lf.fileno(), exclusive=True):
                     provision_error = _provision_app_deps_locked(app_name, root, pin)

@@ -28,6 +28,7 @@ from typing import Any
 from kiro_crew import platform_compat
 from kiro_crew.apps.backend_runtime import _FACADE
 from kiro_crew.config.loader import config_dir
+from kiro_crew.owner_only_files import OWNER_ONLY_FILE_MODE, mkdirs_owner_only
 
 logger = logging.getLogger(_FACADE)
 
@@ -197,9 +198,9 @@ def _await_inflight_spawn(app_name: str, timeout: float = 20.0) -> AppProcess | 
     try:
         safe = re.sub(r"[^A-Za-z0-9._-]", "_", app_name) or "_"
         lock_dir = config_dir() / "app_backend_locks"
-        lock_dir.mkdir(parents=True, exist_ok=True)
+        mkdirs_owner_only(lock_dir)
         _probe_fd = platform_compat.open_create_or_existing(
-            str(lock_dir / f"{safe}.lock"), os.O_RDWR, 0o644
+            str(lock_dir / f"{safe}.lock"), os.O_RDWR, OWNER_ONLY_FILE_MODE
         )
         try:
             if platform_compat.try_acquire_lock(_probe_fd, exclusive=True):
@@ -350,8 +351,10 @@ def app_backend_lifecycle_flock(app_name: str) -> Iterator[None]:
     """
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", app_name) or "_"
     lock_dir = config_dir() / "app_backend_locks"
-    lock_dir.mkdir(parents=True, exist_ok=True)
-    fd = platform_compat.open_create_or_existing(str(lock_dir / f"{safe}.lock"), os.O_RDWR, 0o644)
+    mkdirs_owner_only(lock_dir)
+    fd = platform_compat.open_create_or_existing(
+        str(lock_dir / f"{safe}.lock"), os.O_RDWR, OWNER_ONLY_FILE_MODE
+    )
     try:
         with platform_compat.flock_exclusive(fd):
             yield

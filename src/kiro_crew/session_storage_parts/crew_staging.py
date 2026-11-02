@@ -21,6 +21,7 @@ from typing import IO
 
 from kiro_crew import platform_compat
 from kiro_crew.atomic_write import atomic_write
+from kiro_crew.owner_only_files import mkdirs_owner_only
 from kiro_crew.session_storage_parts.batch_manifest import (
     _append_entry,
     _read_manifest,
@@ -291,7 +292,7 @@ def _record_crew_holds(batch_id: str, uid: str, unit_ids: list[str]) -> None:
     path = _crew_holds_path(batch_id, uid)
     listed = dict.fromkeys([*_read_crew_holds(path), *unit_ids])
     try:
-        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        mkdirs_owner_only(path.parent)
         atomic_write(path, "".join(f"{unit_id}\n" for unit_id in listed), fsync=True)
     except OSError:
         logger.error(

@@ -19,6 +19,7 @@ from typing import Any
 from kiro_crew import platform_compat
 from kiro_crew.apps.manager import app_data_dir
 from kiro_crew.atomic_write import atomic_write, read_bytes_with_retry
+from kiro_crew.owner_only_files import OWNER_ONLY_FILE_MODE
 
 logger = logging.getLogger("kiro_crew.apps.builtins.issue_radar.backend.store")
 
@@ -68,7 +69,7 @@ def _config_lock(root: Path | None = None):
     that race, so every config RMW below holds this exclusive lock across the
     whole read→mutate→atomic-write."""
     lock_path = data_dir(root) / "config.json.lock"
-    lock_path.touch(exist_ok=True)
+    lock_path.touch(mode=OWNER_ONLY_FILE_MODE, exist_ok=True)
     with open(lock_path, "r+") as fd:
         with platform_compat.file_lock(fd.fileno(), exclusive=True):
             yield

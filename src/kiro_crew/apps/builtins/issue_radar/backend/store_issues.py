@@ -15,6 +15,7 @@ from typing import Callable
 
 from kiro_crew import platform_compat
 from kiro_crew.atomic_write import atomic_write, read_bytes_with_retry, read_json_or
+from kiro_crew.owner_only_files import OWNER_ONLY_FILE_MODE
 
 from .store_ai import delete_issue_ai_cache
 from .store_repos import logger, repo_data_dir
@@ -57,7 +58,7 @@ def issues_cache_lock(owner: str, repo: str, root: Path | None = None, state: st
     path = issues_cache_path(owner, repo, root, state)
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(".json.lock")
-    lock_path.touch(exist_ok=True)
+    lock_path.touch(mode=OWNER_ONLY_FILE_MODE, exist_ok=True)
     with open(lock_path, "r+") as fd:
         with platform_compat.file_lock(fd.fileno(), exclusive=True):
             yield
@@ -77,7 +78,7 @@ def issue_write_lock(owner: str, repo: str, number: int, root: Path | None = Non
     the network call, which is the point: ordering the writes is what matters."""
     path = repo_data_dir(owner, repo, root) / f"issue-{int(number)}.write.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.touch(exist_ok=True)
+    path.touch(mode=OWNER_ONLY_FILE_MODE, exist_ok=True)
     with open(path, "r+") as fd:
         with platform_compat.file_lock(fd.fileno(), exclusive=True):
             yield

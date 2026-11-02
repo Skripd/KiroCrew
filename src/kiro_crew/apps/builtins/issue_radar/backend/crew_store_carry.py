@@ -18,6 +18,7 @@ from kiro_crew import atomic_write as atomic_write_module
 from kiro_crew.config.paths import data_home
 from kiro_crew.crew_log.entry_types import RADAR_NUMBER_BOUNDS
 from kiro_crew.crew_log.store import log_exception_text
+from kiro_crew.owner_only_files import OWNER_ONLY_FILE_MODE
 
 from .crew_store_log import (
     _APPEND_FLUSH_SECONDS,
@@ -611,10 +612,10 @@ def _carry_legacy_forward(
         )
     try:
         if crew_dir.is_dir():
-            items_marker.touch(exist_ok=True)
+            items_marker.touch(mode=OWNER_ONLY_FILE_MODE, exist_ok=True)
             (crew_dir / _ITEMS_CARRY_BEGUN_MARKER).unlink(missing_ok=True)
         if legacy_skips.is_file():
-            skips_marker.touch(exist_ok=True)
+            skips_marker.touch(mode=OWNER_ONLY_FILE_MODE, exist_ok=True)
             (legacy_skips.parent / _SKIPS_CARRY_BEGUN_MARKER).unlink(missing_ok=True)
     except OSError:
         logger.warning(
@@ -625,7 +626,7 @@ def _carry_legacy_forward(
 
 def _touch(path: Path) -> None:
     try:
-        path.touch(exist_ok=True)
+        path.touch(mode=OWNER_ONLY_FILE_MODE, exist_ok=True)
     except OSError:
         logger.warning("crew ledger: could not write the carry marker %s", path, exc_info=True)
 
@@ -641,7 +642,7 @@ def _mark_carry_begun(path: Path) -> None:
     the write is refused so the caller sends it again once the marker can be written.
     """
     try:
-        path.touch(exist_ok=True)
+        path.touch(mode=OWNER_ONLY_FILE_MODE, exist_ok=True)
     except OSError as exc:
         logger.warning("crew ledger: could not write the carry marker %s", path, exc_info=True)
         raise CrewLedgerNotRecorded(

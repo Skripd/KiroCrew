@@ -29,7 +29,7 @@ from kiro_crew.apps.manifest import AppManifest
 from kiro_crew.apps.point_grants import point_grant_families
 from kiro_crew.atomic_write import atomic_write
 from kiro_crew.config.loader import config_dir
-from kiro_crew.owner_only_files import ensure_directory
+from kiro_crew.owner_only_files import OWNER_ONLY_FILE_MODE, ensure_directory
 
 logger = logging.getLogger("kiro_crew.apps.manager")
 
@@ -726,7 +726,7 @@ class _UpdateMarker:
         for _attempt in range(8):
             root.mkdir(parents=True, exist_ok=True)
             try:
-                token.touch(exist_ok=False)
+                token.touch(mode=OWNER_ONLY_FILE_MODE, exist_ok=False)
             except FileNotFoundError:
                 # Another update's cleanup removed the directory in between.
                 continue
