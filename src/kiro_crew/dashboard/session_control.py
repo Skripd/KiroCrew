@@ -162,6 +162,7 @@ if TYPE_CHECKING:  # every owner-defined name this module forwards, for type che
         _read_mirror_binding,
         _send_origin_field,
         _send_origin_recipient,
+        _slack_channel_agent_mismatch,
         _slack_thread_of,
         _snapshot_from_probe,
         audit_queued_allow,

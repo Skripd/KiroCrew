@@ -284,6 +284,7 @@ _CONTAINMENT_CHANGE_LABELS = {
     "app": "the session became app-scoped",
     "unattended": "the session became unattended",
     "workspace": "the session moved to a different workspace",
+    "channel_agent_mismatch": "the session's agent no longer matches the Slack channel it is linked to",
 }
 
 
@@ -304,6 +305,27 @@ _NON_CONSTRAINT_KEYS = frozenset({"mirror_unverified"})
 # the exact republication this drain re-check catches. `session_send` and
 # automation entries never carry the flag and stay fully enforced.
 _AUDIENCE_CONSTRAINTS = frozenset({"linked"})
+
+
+def _slack_channel_agent_mismatch(slot: Any) -> bool:
+    """Whether *slot* is linked to a thread of a Slack channel that names its own
+    agent and is not on that agent. A plain attribute read plus the in-memory
+    channel check, which fails closed and does not raise."""
+    if not getattr(slot, "_slack_linked", False):
+        return False
+    channel = getattr(slot, "_slack_channel", "") or ""
+    if not isinstance(channel, str) or not channel:
+        return False
+    from kiro_crew.slack.handler import channel_agent_mismatch
+
+    agent = getattr(slot, "agent", "") or ""
+    kind = getattr(slot, "agent_kind", "") or ""
+    return (
+        channel_agent_mismatch(
+            channel, agent if isinstance(agent, str) else "", kind if isinstance(kind, str) else ""
+        )
+        is not None
+    )
 
 
 def containment_snapshot(
@@ -359,6 +381,13 @@ def _snapshot_from_probe(
         "unattended": str(getattr(slot, "key", "")).startswith(UNATTENDED_SLOT_PREFIXES),
         "workspace": str(getattr(slot, "workspace", "default") or "default"),
     }
+    if _slack_channel_agent_mismatch(slot):
+        # Present only when it holds, so a slot with no pinned Slack link keeps
+        # its snapshot shape. An entry admitted into a linked slot on the
+        # channel's agent recorded no such key, so a slot that has since moved
+        # off that agent (a race the switch guards close, or any later path)
+        # drops the entry instead of running channel speech on another agent.
+        snap["channel_agent_mismatch"] = True
     if probed is not None:
         # The mirror's identity, compared by its rooms (:func:`mirror_audience`):
         # a RETARGETED mirror (A -> B) keeps the boolean true across the wait

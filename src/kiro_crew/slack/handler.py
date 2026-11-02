@@ -333,8 +333,13 @@ from kiro_crew.slack.handler_runtime.inbound import (  # noqa: F401
     _is_slack_restricted,
     _persist_channel_config,
     _read_thread_overrides,
+    _recorded_selection,
     _set_default_agent,
     adopt_default_agent,
+    channel_agent_mismatch,
+    channel_pinned_agent,
+    closed_dashboard_owner_refused,
+    linked_slot_channel_mismatch,
     maybe_apply_privacy_modifiers,
     maybe_route_linked_thread,
 )
