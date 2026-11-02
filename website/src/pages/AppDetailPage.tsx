@@ -48,6 +48,7 @@ import { classifyManifestArt, installedArt, installedArtList, installedArtListAl
 import { fmtDateNumeric, fmtCompact, fmtNumber } from '../i18n/format'
 import { HeroBanner, ScreenshotGallery } from './AppDetailPageArt'
 import { messageActionGrantLabel } from '../messageActions/messageActionRegistry'
+import { selectionActionGrantLabel } from '../selectionActions/selectionActionRegistry'
 import type { AppInfo, NormalizedRegistryEntry, RegistryEntry } from './appDetailPageTypes'
 // The page's parts live in sibling owners that never import this module:
 // `AppDetailPageArt.tsx` (the hero banner and the screenshot gallery, each with
@@ -101,6 +102,7 @@ export default function AppDetailPage() {
   const stagedOpenFullUrl = app?.linkOpenGrant?.stagedFullUrl === true
   // Selection actions an update added or changed (a new source, more text, a new effect).
   const stagedSelection = app?.selectionActionGrant?.staged || []
+  const declaredSelectionActions = (app?.manifest as { contributes?: { selectionActions?: unknown } } | undefined)?.contributes?.selectionActions
   const hasStagedGrants = stagedApi.length + stagedEvents.length + stagedLinkHosts.length + stagedLinkPatterns.length + stagedMessageActions.length + stagedOpenHosts.length + stagedSelection.length > 0 || stagedFullUrl || stagedOpenFullUrl
   // Shown where the notice was once the owner approves, so the moment is confirmed.
   const [grantsApprovedMsg, setGrantsApprovedMsg] = useState('')
@@ -1022,11 +1024,11 @@ export default function AppDetailPage() {
               {stagedSelection.length > 0 && (
                 <div>
                   <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_selection_actions')}</div>
-                  <div className="flex flex-wrap gap-1 mt-1">
+                  <ul className="mt-1 text-[13px] list-disc pl-5" data-testid="staged-selection-actions">
                     {stagedSelection.map(e => (
-                      <code key={e} className="bg-bg-elevated border border-border px-1.5 py-0.5 rounded text-[11px] text-text break-all">{e}</code>
+                      <li key={e}>{selectionActionGrantLabel(e, declaredSelectionActions)}</li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               )}
               {stagedOpenFullUrl && (
@@ -1044,7 +1046,7 @@ export default function AppDetailPage() {
               primary
               onClick={async () => {
                 startAction('approve_grants')
-                const approved = [...stagedApi, ...stagedEvents, ...stagedLinkHosts, ...stagedLinkPatterns, ...(stagedFullUrl ? ['fullUrl'] : []), ...stagedMessageActions.map(e => messageActionGrantLabel(e, declaredMessageActions)), ...stagedOpenHosts, ...(stagedOpenFullUrl ? ['fullUrl'] : []), ...stagedSelection].join(', ')
+                const approved = [...stagedApi, ...stagedEvents, ...stagedLinkHosts, ...stagedLinkPatterns, ...(stagedFullUrl ? ['fullUrl'] : []), ...stagedMessageActions.map(e => messageActionGrantLabel(e, declaredMessageActions)), ...stagedOpenHosts, ...(stagedOpenFullUrl ? ['fullUrl'] : []), ...stagedSelection.map(e => selectionActionGrantLabel(e, declaredSelectionActions))].join(', ')
                 try {
                   await api.enableApp(app.name, false, {
                     api: stagedApi,
