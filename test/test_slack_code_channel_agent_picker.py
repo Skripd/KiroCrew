@@ -232,10 +232,15 @@ def test_a_folder_default_agent_preselects_when_no_explicit_one(env: Env) -> Non
     assert _initial(asyncio.run(_open(env))) == "builder"
 
 
-def test_agents_that_cannot_be_listed_leave_a_plain_kickoff(env: Env) -> None:
+def test_agents_that_cannot_be_listed_leave_the_kickoff_without_a_picker(env: Env) -> None:
     env.agents = None
-    assert asyncio.run(_open(env)) == []
-    assert env.slack.posts[0][0] == CH  # the channel still opened, text only
+    blocks = asyncio.run(_open(env))
+    assert _select(blocks) is None  # no agent picker ...
+    from kiro_crew.slack.code_channels import approval_picker
+
+    ids = [(b.get("accessory") or {}).get("action_id") for b in blocks]
+    assert approval_picker.APPROVAL_SELECT_ACTION_ID in ids  # ... but the mode select stays
+    assert env.store.get_binding(CH) is not None  # the channel still opened
 
 
 def test_a_refused_block_kit_post_falls_back_to_text(env: Env) -> None:
@@ -759,7 +764,17 @@ def test_an_agent_name_with_an_underscore_is_audited_by_name(env: Env) -> None:
 
 
 @pytest.mark.parametrize(
-    "change", ["activation_off", "archived", "feature_off", "owner_removed", "workspace_denied"]
+    "change",
+    [
+        "activation_off",
+        "archived",
+        "archive_finished",
+        "dropped",
+        "rebound",
+        "feature_off",
+        "owner_removed",
+        "workspace_denied",
+    ],
 )
 def test_a_gate_that_closes_inside_the_switch_refuses_its_commit(
     env: Env, monkeypatch: pytest.MonkeyPatch, change: str
@@ -774,6 +789,16 @@ def test_a_gate_that_closes_inside_the_switch_refuses_its_commit(
             env.activation[CH] = ACTIVATION_OFF
         elif change == "archived":
             surface._archived_here.add(CH)
+        elif change == "archive_finished":
+            # wrapup stores the stamp, then lifts the in-process fence.
+            env.store.update_binding(CH, archived_at=1.0)
+            surface._archived_here.discard(CH)
+        elif change == "dropped":
+            env.store.drop_binding(CH)
+        elif change == "rebound":
+            current = env.store.get_binding(CH)
+            assert current is not None
+            env.store.replace_binding(replace(current, session_key="chat-other-1"))
         elif change == "feature_off":
             env.on = False
         elif change == "owner_removed":
