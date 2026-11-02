@@ -21685,6 +21685,7 @@
     "intro_video_title": "{{productName}} em 15 segundos",
     "notice_count_one": "{{count}} novidade em Explorar",
     "pill_count": "Explorar {{done}}/{{total}}",
+    "header_progress": "{{done}} de {{total}} recursos experimentados",
     "streak_days_one": "{{count}} dia · melhor {{best}}",
     "your_progress": "Seu progresso",
     "notice_count_many": "{{count}} novidades em Explorar",

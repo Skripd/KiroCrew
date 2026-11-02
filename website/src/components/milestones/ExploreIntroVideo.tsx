@@ -5,7 +5,6 @@ import { i18nT } from '../../i18n/t'
 import { api } from '../../api/client'
 import type { FeatureVideoStatus } from '../../api/client/featureDiscovery'
 import { useAppSelector } from '../../store'
-import Glass from '../Glass'
 import ErrorNotice from '../ErrorNotice'
 import { recordError } from '../../utils/errorReport'
 
@@ -21,8 +20,10 @@ export const INTRO_VIDEO_POSTER = '/app-assets/feature-videos/kiro-crew-intro.jp
 const SEEN_AT = 0.8
 
 /**
- * "Kiro Crew in 15 seconds": a slim card at the top of Explore with one short
- * bundled video. It shows until the clip is watched or the card is closed, and
+ * "Kiro Crew in 15 seconds": a slim inset card at the top of Explore's body
+ * with one short bundled video. It is a plain block, not its own glass pane, so
+ * it reads as part of the Explore panel and its close as closing only itself.
+ * It shows until the clip is watched or the card is closed, and
  * that verdict is the same permanent Feature Videos record the startup intros
  * use (RFC 8.2), so it holds on this machine across browsers. Fixed layout,
  * i18n text only.
@@ -86,7 +87,7 @@ export default function ExploreIntroVideo({ className }: { className?: string })
     void record(seenSent.current ? 'seen' : 'dismissed').then(ok => { if (ok) setClosed(true) })
   }
   return (
-    <Glass variant="panel" radius={16} className={className} data-testid="explore-intro-video">
+    <div className={className} data-testid="explore-intro-video">
       <div className="flex items-center gap-3">
         <span aria-hidden="true" className="shrink-0 w-7 h-7 rounded-md flex items-center justify-center bg-accent-subtle text-accent">
           <Play size={14} />
@@ -162,6 +163,6 @@ export default function ExploreIntroVideo({ className }: { className?: string })
           />
         </div>
       )}
-    </Glass>
+    </div>
   )
 }
