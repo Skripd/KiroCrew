@@ -635,7 +635,18 @@ def _url_payload_command(n: int) -> str:
 #: was relaxed.
 #: Raised by 3, from 33,720, for the ``kas-mcp-launch`` leaf on the read+write floor
 #: (``paths_lists``): one entry and its two-line note; the floor only grows.
-_PACKAGE_LINE_BUDGET = 33_723
+#: Raised by 185, from 33,723, for a person's in-session override of one deny rule
+#: (``docs/request-for-change/rfc-deny-session-override.md``): 137 are
+#: ``deny_waiver`` (reading a refusal's key, the governance-pin and overlay checks
+#: that keep a key unwaivable, and the check against the per-transport backend
+#: sets that ``agent_sdk`` owns), and the
+#: other 48 are what ``deny_gate``'s 80 new lines (``_DenyWaiver`` plus one skip
+#: at each return site, which has to sit in ``is_denied`` beside the refusal it
+#: steps aside, and keeping a waived push out of ``push_allowed``) need past the 32 lines of headroom main had left. ``deny_waiver``
+#: stays in this package, not beside its dashboard reader, so the sensitive-change,
+#: security-scope and denial-differential lanes keep reviewing it. No rule was
+#: dropped and no check relaxed: an empty ``waived`` judges every call as before.
+_PACKAGE_LINE_BUDGET = 33_908
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second
