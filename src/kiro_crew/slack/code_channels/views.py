@@ -73,6 +73,11 @@ def _admitted(admits: Admits | None) -> bool:
         return False
 
 
+#: What a view write raises when the caller's own fence refused it at the cap
+#: (no removal was made; the caller's pre-send check, not Slack, said no).
+FENCED = "fenced"
+
+
 def _stopped(channel_id: str) -> bool:
     from kiro_crew.slack.code_channels import surface
 
@@ -152,13 +157,9 @@ _record_locks: dict[str, asyncio.Lock] = {}
 
 
 def _record_lock(channel_id: str) -> asyncio.Lock:
-    lock = _record_locks.get(channel_id)
-    if lock is None:
-        if len(_record_locks) > 4096:
-            for key in [k for k, v in _record_locks.items() if not v.locked()]:
-                _record_locks.pop(key, None)
-        lock = _record_locks[channel_id] = asyncio.Lock()
-    return lock
+    # Never pruned: one per code channel (a bounded set), and a lock dropped
+    # between its release and its next waiter's wake-up would let two writers in.
+    return _record_locks.setdefault(channel_id, asyncio.Lock())
 
 
 def _stamp(view: dict[str, Any]) -> float:
@@ -293,10 +294,11 @@ _locks: dict[str, asyncio.Lock] = {}
 
 
 def _lock(channel_id: str) -> asyncio.Lock:
-    """The channel's view lock: every view upsert by a tool, and every eviction."""
-    if len(_locks) > 4096:
-        for key in [k for k, v in _locks.items() if not v.locked()]:
-            _locks.pop(key, None)
+    """The channel's view lock: every view upsert by a tool, and every eviction.
+
+    Never pruned, like :func:`_record_lock`: a lock dropped between its release
+    and its next waiter's wake-up would let two writers into one channel.
+    """
     return _locks.setdefault(channel_id, asyncio.Lock())
 
 
@@ -411,8 +413,14 @@ async def _write_view(
         # Under the channel's view lock already (asyncio locks are not reentrant).
         removed = await _make_room(client, channel_id, for_key=key, admits=admits, fence=fence)
         if not removed:
+            # Nothing removed because Slack's Stop or the caller's fence said no:
+            # that is the answer, not "the channel is full".
+            if _stopped(channel_id):
+                raise CodeChannelApiError("agents.conversations.setView", STOPPED) from None
             if not _admitted(admits):
                 raise CodeChannelApiError("agents.conversations.setView", CHANNEL_OFF) from None
+            if fence is not None and not await _fenced(fence):
+                raise CodeChannelApiError("agents.conversations.setView", FENCED) from None
             raise
         if _stopped(channel_id):
             # Slack's Stop landed while room was made: nothing more is sent.
