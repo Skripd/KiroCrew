@@ -323,6 +323,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _BUILTIN_SERVICE_APPS,
         _OPEN_COMMAND_DESKTOP_ENV_KEYS,
         _client_install_manifest,
+        _manifest_shell_platform_refusal,
         _notify_builtin_service,
         _sync_builtin_config,
     )
