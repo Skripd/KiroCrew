@@ -79,7 +79,7 @@ def test_the_board_publish_honours_an_off_channel(monkeypatch):
 
     sent: list = []
 
-    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None):
+    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None, **_kw):
         sent.append(snapshot)
         return "updated"
 
@@ -185,7 +185,7 @@ def test_the_publish_wrapper_hands_the_publisher_the_live_scope_check(monkeypatc
 
     seen: dict = {}
 
-    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None):
+    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None, **_kw):
         seen["admits"] = admits
         return "updated"
 

@@ -13,10 +13,13 @@ are kept: never a session key, a command or any transcript text.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
+
+_S = TypeVar("_S")
 
 #: A Slack user id: the only form that becomes a mention.
 _USER_ID = re.compile(r"^[UW][A-Z0-9]{2,30}$")
@@ -46,22 +49,34 @@ def take_urgent(worker_keys: Any) -> bool:
     return bool(hit)
 
 
-def _generation(slot: Any) -> int:
+def generation_of(slot: Any) -> int:
+    """*slot*'s turn generation now: read it BEFORE awaiting the stop."""
     value = getattr(slot, "_turn_generation", 0)
     return value if isinstance(value, int) else 0
 
 
-def note(slot: Any, user: str) -> None:
-    """Record that *user* stopped *slot*'s current turn (a well-formed user id only)."""
+def note(slot: Any, user: str, *, generation: int) -> None:
+    """Record that *user* stopped *slot*'s turn *generation* (a well-formed user id only).
+
+    *generation* is the turn the stop was aimed at, read before any await: the
+    slot may already be on its next (queued) turn by the time the stop returns,
+    and that turn was stopped by nobody. A note for a generation the slot has
+    moved past is not kept.
+    """
     key = str(getattr(slot, "key", "") or "")
     if not key or not _USER_ID.match(user or ""):
+        return
+    if generation_of(slot) != generation:
+        # Moved on: nothing to note. A note for a LATER turn (another Stop that
+        # landed meanwhile) is that turn's and stays.
+        stale = _stops.get(key)
+        if stale is not None and stale.generation == generation:
+            _stops.pop(key, None)
         return
     if len(_stops) > _MAX_TRACKED:
         _stops.clear()
         _urgent.clear()
-    _stops[key] = Stop(
-        user=user, at=time.strftime("%H:%M", time.gmtime()), generation=_generation(slot)
-    )
+    _stops[key] = Stop(user=user, at=time.strftime("%H:%M", time.gmtime()), generation=generation)
     _urgent.add(key)
 
 
@@ -75,10 +90,41 @@ def current(state: Any, worker_key: str) -> Stop | None:
     stop = _stops.get(key) if key else None
     if stop is None:
         return None
-    if _generation(slot) != stop.generation:
+    if generation_of(slot) != stop.generation:
         _stops.pop(key, None)  # the next turn started: the stop is history
+        _urgent.discard(key)  # and its unpublished mark grants no edit-gap skip
         return None
     return stop
+
+
+def reconcile(snapshot: _S, state: Any = None) -> _S:
+    """*snapshot* with every "Stopped by" overlay set to the stop showing NOW.
+
+    A snapshot is read before the awaits of a publish, and in between a queued
+    turn can start (stopped by nobody: its overlay is removed) or another Stop
+    can land (its user and time replace the older ones, or are added to a row
+    read before it). Synchronous: called right before each render (and before
+    an urgent mark is taken), after the publish's awaits.
+    """
+    rows = tuple(getattr(snapshot, "rows", ()) or ())
+    if not _stops and not any(getattr(r, "stopped_by", "") for r in rows):
+        return snapshot
+    if state is None:
+        from kiro_crew.slack.code_channels import surface
+
+        state = surface.dashboard_state()
+    kept = []
+    changed = False
+    for row in rows:
+        stop = current(state, row.session_key) if state is not None else None
+        user, at = (stop.user, stop.at) if stop is not None else ("", "")
+        if (row.stopped_by, row.stopped_at) != (user, at):
+            row = dataclasses.replace(row, stopped_by=user, stopped_at=at)
+            changed = True
+        kept.append(row)
+    if not changed:
+        return snapshot
+    return dataclasses.replace(snapshot, rows=tuple(kept))  # type: ignore[type-var]
 
 
 def reset_for_tests() -> None:
