@@ -7,7 +7,7 @@
  */
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Bot, Folder, FolderGit2, Info } from 'lucide-react'
+import { AlertTriangle, Bot, Folder, FolderGit2, Info, ShieldCheck } from 'lucide-react'
 import SimpleSelect from '../../components/SimpleSelect'
 import ErrorNotice from '../../components/ErrorNotice'
 import FolderConfigModal from '../../components/FolderConfigModal'
@@ -21,7 +21,17 @@ import { EFFORT_LEVELS, effortLabel } from '../../lib/effort'
 import { Field, INHERIT_MODEL, ModelField } from '../../components/crew/crewFields'
 import { i18nT } from '../../i18n/t'
 import { compareText } from '../../i18n/format'
-import { slackCodeDraftFrom, type SlackCodeDraft } from './slackCodeDraft'
+import { APPROVAL_MODES, slackCodeDraftFrom, type SlackCodeDraft } from './slackCodeDraft'
+
+const APPROVAL_LABEL_KEY: Record<string, string> = {
+  ask: 'components.approvalModePicker.normal_label',
+  trust_reads: 'components.approvalModePicker.reads_label',
+  trust: 'components.approvalModePicker.trust_label',
+}
+
+function approvalLabel(mode: string): string {
+  return i18nT(APPROVAL_LABEL_KEY[mode] ?? APPROVAL_LABEL_KEY.ask)
+}
 
 /** The folder picker's "New folder…" row: opens the create modal, never stored
  *  (a NUL cannot appear in a folder id). */
@@ -264,7 +274,23 @@ export default function SlackCodeChannelDefaults({ data, draft, onChange, readOn
                     aria-label={i18nT('pages.kiroCrewAgentsPage.edit_reasoning_effort')}
                   />
                 </Field>
+                <Field label={i18nT('components.approvalModePicker.approval_mode')} hint={i18nT('pages.settings.slackPanel.slackCode.approval_hint')}>
+                  <SimpleSelect
+                    options={[...APPROVAL_MODES]}
+                    optionLabels={APPROVAL_MODES.map(approvalLabel)}
+                    value={draft.approval}
+                    onChange={v => onChange({ approval: v || 'ask' })}
+                    disabled={readOnly}
+                    aria-label={i18nT('components.approvalModePicker.approval_mode')}
+                  />
+                </Field>
               </div>
+              {draft.approval === 'trust' && (
+                <div className="flex items-start gap-2 rounded-md border border-border bg-bg px-3 py-2" role="note" data-testid="slack-code-approval-warning">
+                  <AlertTriangle size={13} className="text-warn flex-none mt-0.5" />
+                  <span className="text-[12px] text-warn">{i18nT('pages.settings.slackPanel.slackCode.approval_trust_warning')}</span>
+                </div>
+              )}
 
               {/* No hand-off for any of these: they sit beside the unsaved
                   Slack draft (the pickers above, the token fields and owner id
@@ -308,6 +334,9 @@ export default function SlackCodeChannelDefaults({ data, draft, onChange, readOn
                     draft.effort ? effortLabel(draft.effort) : '',
                   ].filter(Boolean).join(' · ')}
                   source={sourceLabel(modelSet ? 'default' : 'agent')} />
+                <PreviewRow icon={<ShieldCheck size={12} />} label={i18nT('components.approvalModePicker.approval_mode')}
+                  value={approvalLabel(draft.approval)}
+                  source={draft.approval !== 'ask' ? sourceLabel('default') : undefined} />
               </div>
               <div className="flex items-start gap-2 text-[12px] text-muted">
                 <Info size={12} className="flex-none mt-0.5" />
