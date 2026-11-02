@@ -10825,6 +10825,23 @@
       "offer_open": "Abrir {{host}}",
       "copy_failed": "Não foi possível copiar. Selecione o texto no app e copie você mesmo.",
       "more_actions": "Mais ações"
+    },
+    "selectionActions": {
+      "apps": "Apps",
+      "apps_hint": "Enviar o texto selecionado para um app",
+      "menu_label": "Apps para o texto selecionado",
+      "close": "Fechar",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "open": "Abrir {{host}}",
+      "no_response": "{{app}} não respondeu.",
+      "failed": "{{app}} teve um problema: {{message}}",
+      "too_short": "{{title}} precisa de pelo menos {{min}} caracteres. Você selecionou {{count}}.",
+      "copy_failed": "Não foi possível copiar para a área de transferência.",
+      "load_failed": "Não foi possível carregar os apps para o texto selecionado.",
+      "loading": "Carregando apps…",
+      "none": "Nenhum app tem uma ação para este texto.",
+      "retry": "Tentar de novo"
     }
   },
   "hooks": {
@@ -11217,7 +11234,8 @@
       "link_open_remembered": "Escolhas de links lembradas",
       "link_open_choice_app": "Abre no {{name}}",
       "link_open_choice_browser": "Abre no seu navegador",
-      "link_open_forget": "Esquecer"
+      "link_open_forget": "Esquecer",
+      "grants_reconsent_selection_actions": "Ações sobre texto selecionado: permite que os itens do app recebam o texto que você seleciona nas respostas do chat e ofereçam um resultado para Copiar ou Abrir."
     },
     "appPage": {
       "loading_app": "Carregando app…",

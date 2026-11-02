@@ -99,7 +99,9 @@ export default function AppDetailPage() {
   // So do link-open hosts and whole URLs for opened links.
   const stagedOpenHosts = app?.linkOpenGrant?.stagedHosts || []
   const stagedOpenFullUrl = app?.linkOpenGrant?.stagedFullUrl === true
-  const hasStagedGrants = stagedApi.length + stagedEvents.length + stagedLinkHosts.length + stagedLinkPatterns.length + stagedMessageActions.length + stagedOpenHosts.length > 0 || stagedFullUrl || stagedOpenFullUrl
+  // Selection actions an update added or changed (a new source, more text, a new effect).
+  const stagedSelection = app?.selectionActionGrant?.staged || []
+  const hasStagedGrants = stagedApi.length + stagedEvents.length + stagedLinkHosts.length + stagedLinkPatterns.length + stagedMessageActions.length + stagedOpenHosts.length + stagedSelection.length > 0 || stagedFullUrl || stagedOpenFullUrl
   // Shown where the notice was once the owner approves, so the moment is confirmed.
   const [grantsApprovedMsg, setGrantsApprovedMsg] = useState('')
   const enableLabel = app?.sessionApprovalConsentPending
@@ -276,6 +278,7 @@ export default function AppDetailPage() {
             linkPreviewGrant: installed.linkPreviewGrant,
             messageActionGrant: installed.messageActionGrant,
             linkOpenGrant: installed.linkOpenGrant,
+            selectionActionGrant: installed.selectionActionGrant,
             managed: installed.managed,
             source: installed.source,
             installedAt: installed.installedAt,
@@ -404,6 +407,7 @@ export default function AppDetailPage() {
             linkPreviewGrant: installed.linkPreviewGrant,
             messageActionGrant: installed.messageActionGrant,
             linkOpenGrant: installed.linkOpenGrant,
+            selectionActionGrant: installed.selectionActionGrant,
             managed: installed.managed,
             source: installed.source,
             installedAt: installed.installedAt,
@@ -1015,6 +1019,16 @@ export default function AppDetailPage() {
                   </div>
                 </div>
               )}
+              {stagedSelection.length > 0 && (
+                <div>
+                  <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_selection_actions')}</div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {stagedSelection.map(e => (
+                      <code key={e} className="bg-bg-elevated border border-border px-1.5 py-0.5 rounded text-[11px] text-text break-all">{e}</code>
+                    ))}
+                  </div>
+                </div>
+              )}
               {stagedOpenFullUrl && (
                 <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_link_open_full_url')}</div>
               )}
@@ -1030,7 +1044,7 @@ export default function AppDetailPage() {
               primary
               onClick={async () => {
                 startAction('approve_grants')
-                const approved = [...stagedApi, ...stagedEvents, ...stagedLinkHosts, ...stagedLinkPatterns, ...(stagedFullUrl ? ['fullUrl'] : []), ...stagedMessageActions.map(e => messageActionGrantLabel(e, declaredMessageActions)), ...stagedOpenHosts, ...(stagedOpenFullUrl ? ['fullUrl'] : [])].join(', ')
+                const approved = [...stagedApi, ...stagedEvents, ...stagedLinkHosts, ...stagedLinkPatterns, ...(stagedFullUrl ? ['fullUrl'] : []), ...stagedMessageActions.map(e => messageActionGrantLabel(e, declaredMessageActions)), ...stagedOpenHosts, ...(stagedOpenFullUrl ? ['fullUrl'] : []), ...stagedSelection].join(', ')
                 try {
                   await api.enableApp(app.name, false, {
                     api: stagedApi,
@@ -1041,6 +1055,7 @@ export default function AppDetailPage() {
                     messageActions: stagedMessageActions,
                     linkOpenHosts: stagedOpenHosts,
                     linkOpenFullUrl: stagedOpenFullUrl ? ['fullUrl'] : [],
+                    selectionActions: stagedSelection,
                   })
                   setGrantsApprovedMsg(i18nT('pages.appDetailPage.grants_approved', { entries: approved }))
                   await load()

@@ -10647,6 +10647,23 @@
       "offer_open": "{{host}} öffnen",
       "copy_failed": "Kopieren fehlgeschlagen. Markiere den Text in der App und kopiere ihn selbst.",
       "more_actions": "Weitere Aktionen"
+    },
+    "selectionActions": {
+      "apps": "Apps",
+      "apps_hint": "Ausgewählten Text an eine App senden",
+      "menu_label": "Apps für den ausgewählten Text",
+      "close": "Schließen",
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "open": "{{host}} öffnen",
+      "no_response": "{{app}} hat nicht geantwortet.",
+      "failed": "{{app}} hatte ein Problem: {{message}}",
+      "too_short": "{{title}} braucht mindestens {{min}} Zeichen. Du hast {{count}} ausgewählt.",
+      "copy_failed": "Kopieren in die Zwischenablage fehlgeschlagen.",
+      "load_failed": "Die Apps für den ausgewählten Text konnten nicht geladen werden.",
+      "loading": "Apps werden geladen…",
+      "none": "Keine App hat eine Aktion für diesen Text.",
+      "retry": "Erneut versuchen"
     }
   },
   "hooks": {
@@ -11037,7 +11054,8 @@
       "link_open_remembered": "Gespeicherte Link-Entscheidungen",
       "link_open_choice_app": "Öffnet in {{name}}",
       "link_open_choice_browser": "Öffnet in deinem Browser",
-      "link_open_forget": "Vergessen"
+      "link_open_forget": "Vergessen",
+      "grants_reconsent_selection_actions": "Aktionen für ausgewählten Text: Die Einträge der App erhalten Text, den du in Chat-Antworten auswählst, und können ein Ergebnis zum Kopieren oder Öffnen anbieten."
     },
     "appPage": {
       "loading_app": "App wird geladen…",

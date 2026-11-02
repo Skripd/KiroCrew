@@ -4638,6 +4638,23 @@
     },
     "sendToInstanceSubmenu": {
       "default_badge": "default"
+    },
+    "selectionActions": {
+      "apps": "Apps",
+      "apps_hint": "Send the selected text to an app",
+      "menu_label": "Apps for the selected text",
+      "close": "Close",
+      "copy": "Copy",
+      "copied": "Copied",
+      "open": "Open {{host}}",
+      "no_response": "{{app}} didn't respond.",
+      "failed": "{{app}} ran into a problem: {{message}}",
+      "too_short": "{{title}} needs at least {{min}} characters. You selected {{count}}.",
+      "copy_failed": "Couldn't copy to the clipboard.",
+      "load_failed": "Couldn't load the apps for selected text.",
+      "loading": "Loading apps…",
+      "none": "No app has an item for this text.",
+      "retry": "Retry"
     }
   },
   "hooks": {
@@ -4879,7 +4896,8 @@
       "link_open_remembered": "Remembered link choices",
       "link_open_choice_app": "Opens in {{name}}",
       "link_open_choice_browser": "Opens in your browser",
-      "link_open_forget": "Forget"
+      "link_open_forget": "Forget",
+      "grants_reconsent_selection_actions": "Selected-text actions: lets the app's items be handed text you select in chat replies, and offer it back for Copy or Open."
     },
     "appsPage": {
       "action_failed": "Failed to {{action}} {{name}}",

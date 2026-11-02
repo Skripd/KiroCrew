@@ -8,7 +8,7 @@
  * is that row after `normalizeRegistryApp`. Types only: this module holds no
  * runtime code and never imports the page.
  */
-import type { LinkOpenGrantRow, LinkPreviewGrantRow, MessageActionGrantRow, RegistryApp } from '../components/appstore/types'
+import type { LinkOpenGrantRow, LinkPreviewGrantRow, MessageActionGrantRow, RegistryApp, SelectionActionGrantRow } from '../components/appstore/types'
 
 type AppInfo = Pick<RegistryApp, '_registry' | 'provenance'> & {
   catalogListed?: boolean
@@ -63,6 +63,7 @@ type AppInfo = Pick<RegistryApp, '_registry' | 'provenance'> & {
   linkPreviewGrant?: LinkPreviewGrantRow
   messageActionGrant?: MessageActionGrantRow
   linkOpenGrant?: LinkOpenGrantRow
+  selectionActionGrant?: SelectionActionGrantRow
   managed?: string
   source?: string
   installedAt?: string

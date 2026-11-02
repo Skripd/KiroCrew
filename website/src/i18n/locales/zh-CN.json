@@ -10469,6 +10469,23 @@
       "offer_open": "打开 {{host}}",
       "copy_failed": "无法复制。请在应用中选中文字后自行复制。",
       "more_actions": "更多操作"
+    },
+    "selectionActions": {
+      "apps": "应用",
+      "apps_hint": "把选中的文字发给一个应用",
+      "menu_label": "处理选中文字的应用",
+      "close": "关闭",
+      "copy": "复制",
+      "copied": "已复制",
+      "open": "打开 {{host}}",
+      "no_response": "{{app}} 没有响应。",
+      "failed": "{{app}} 出错了：{{message}}",
+      "too_short": "“{{title}}”至少需要 {{min}} 个字符，你选了 {{count}} 个。",
+      "copy_failed": "无法复制到剪贴板。",
+      "load_failed": "无法加载处理选中文字的应用。",
+      "loading": "正在加载应用…",
+      "none": "没有应用可处理这段文字。",
+      "retry": "重试"
     }
   },
   "hooks": {
@@ -10857,7 +10874,8 @@
       "link_open_remembered": "记住的链接选择",
       "link_open_choice_app": "在 {{name}} 中打开",
       "link_open_choice_browser": "在浏览器中打开",
-      "link_open_forget": "忘记"
+      "link_open_forget": "忘记",
+      "grants_reconsent_selection_actions": "选中文字操作：允许应用的条目拿到你在聊天回复中选中的文字，并提供结果供复制或打开。"
     },
     "appPage": {
       "loading_app": "加载应用…",
