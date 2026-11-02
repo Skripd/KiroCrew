@@ -224,6 +224,21 @@ def _read_agent_spec(
             error="untrusted UNC path rejected",
         )
         return None
+    if _WINDOWS and hooks._screen_windows_links(str(path)) is None:
+        # A local spelling can still be a link (or sit under one) whose target
+        # names a share, and ``resolve`` would follow it into the SMB probe the
+        # check above exists to prevent. The hooks screen reads each link's own
+        # target without traversing it, so a chain reaching an untrusted share
+        # is refused before anything follows it. The screen only refuses: an
+        # admitted path resolves exactly as before, and the pinned open below
+        # still judges what is actually read.
+        _audit_denied(
+            operation=operation,
+            source=source,
+            resources=str(path),
+            error="untrusted link target rejected",
+        )
+        return None
     try:
         real = path.resolve(strict=True)
     except (OSError, RuntimeError):
@@ -234,8 +249,8 @@ def _read_agent_spec(
         # `!agent` handler exits without replying.
         return None
     if _unc_refused(str(real)):
-        # A local link into a share: the resolve has already probed, and the
-        # read must still not load the remote document.
+        # A share the link screen admitted, or a resolve that still landed on
+        # one: the read must not load the remote document.
         _audit_denied(
             operation=operation,
             source=source,

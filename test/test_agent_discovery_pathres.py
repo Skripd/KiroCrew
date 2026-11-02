@@ -479,6 +479,28 @@ class TestTheUncTrustedRootGateStays:
         # (backslashes on Windows), so compare against str(Path), not a literal.
         assert [row["resources"] for row in audited] == [str(share)] * 2
 
+    def test_a_local_link_naming_a_share_is_refused_before_the_resolve_probe(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        audited = self._arm(monkeypatch)
+        from kiro_crew.hook_runtime import windows_paths
+
+        monkeypatch.setattr(windows_paths, "unc_probe_allowed", lambda raw: False)
+        agents = tmp_path / "agents"
+        agents.mkdir()
+        link = agents / "x.json"
+        link.symlink_to("//evil/share/x.json")
+
+        class ProbingPath(type(Path())):
+            """A link whose ``resolve`` is the probe the screen must prevent."""
+
+            def resolve(self, strict: bool = False) -> Path:
+                pytest.fail("resolve followed a link whose target names an untrusted share")
+
+        assert _read_agent_spec(ProbingPath(link), operation="op", source="src") is None
+        assert [row["error"] for row in audited] == ["untrusted link target rejected"]
+        assert audited[0]["resources"] == str(link)
+
     def test_a_trusted_share_and_a_local_path_pass(self, tmp_path: Path, monkeypatch) -> None:
         monkeypatch.setattr(ad_mod, "_WINDOWS", True)
         monkeypatch.setattr(ad_mod, "unc_probe_allowed", lambda raw: True)
