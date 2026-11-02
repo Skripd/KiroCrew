@@ -409,9 +409,9 @@ _LAZY_IMPORTS = {
     ),
     "kiro_crew.dashboard.handlers.autonudge": (
         "api_autonudge_delete api_autonudge_fire api_autonudge_get api_autonudge_list "
-        "api_autonudge_start api_autonudge_update api_monitor_clear api_monitor_create "
-        "api_monitor_restart api_monitor_slot_get api_monitor_stop api_monitor_update "
-        "api_monitors_list api_session_monitor_get"
+        "api_autonudge_start api_autonudge_update api_monitor_clear api_monitor_contract "
+        "api_monitor_create api_monitor_restart api_monitor_slot_get api_monitor_stop "
+        "api_monitor_update api_monitors_list api_session_monitor_get"
     ),
     "kiro_crew.dashboard.handlers.change_cards": "change_card_middleware",
     "kiro_crew.dashboard.handlers.cron_board": "wire_app_cron_folder_creator",
@@ -474,7 +474,7 @@ def test_the_lazy_imports_stay_inside_the_functions_that_need_them() -> None:
                     for alias in node.names:
                         local.setdefault(alias.asname or alias.name, set()).add(alias.name)
     assert local == {name: {module} for name, module in expected.items()}
-    assert len(expected) == 117
+    assert len(expected) == 118
 
 
 def test_a_star_import_carries_the_moved_public_names(tmp_path: Path) -> None:
