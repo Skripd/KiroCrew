@@ -5,7 +5,7 @@ author: kirocrew agent session, directed by jeeshofone
 created: 2026-11-02
 last-audited: 2026-11-02
 audited-at: d6d40e23a2
-doc-pr: TBD
+doc-pr: 28664
 implementation-prs: []
 tracking-issues: [18860]
 supersedes: []
