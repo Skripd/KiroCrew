@@ -421,5 +421,13 @@
   "apps.codeReviewSage.components.prStatusChips.failing_count",
   "apps.autoResearch.researchLabPage.estimate",
   "apps.autoResearch.researchLabPage.findings_tally",
-  "apps.autoResearch.researchLabPage.cycles_count"
+  "apps.autoResearch.researchLabPage.cycles_count",
+  "apps.codeReviewSage.components.learningRail.pending_count",
+  "apps.codeReviewSage.components.reportView.blocking_count",
+  "apps.codeReviewSage.components.reportView.should_fix_count",
+  "apps.codeReviewSage.components.runCard.more_count",
+  "apps.codeReviewSage.components.runDetail.more_count",
+  "apps.codeReviewSage.components.runProgress.reviewed_of",
+  "apps.codeReviewSage.components.runProgress.failed_count",
+  "apps.codeReviewSage.components.runProgress.cancelled_count"
 ]
