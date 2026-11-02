@@ -322,7 +322,7 @@ def test_the_publish_wrapper_rearms_the_channels_refresh(monkeypatch):
 def test_the_publish_wrapper_rechecks_the_scope_before_anything_is_sent(monkeypatch):
     sent: list = []
 
-    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None):
+    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None, **_kw):
         sent.append(snapshot)
         return "updated"
 
@@ -1662,7 +1662,7 @@ def test_the_board_publish_honours_an_off_channel(monkeypatch):
 
     sent: list = []
 
-    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None):
+    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None, **_kw):
         sent.append(snapshot)
         return "updated"
 
@@ -1768,7 +1768,7 @@ def test_the_publish_wrapper_hands_the_publisher_the_live_scope_check(monkeypatc
 
     seen: dict = {}
 
-    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None):
+    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None, **_kw):
         seen["admits"] = admits
         return "updated"
 
@@ -2163,7 +2163,7 @@ def test_the_sidebar_summary_comes_from_the_pr_filled_board(monkeypatch):
     async def read_board(st, b):
         return unfilled
 
-    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None):
+    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None, **_kw):
         return "updated"
 
     async def no_filing(binding, snapshot):
@@ -2215,7 +2215,7 @@ def test_a_board_not_shown_at_send_time_clears_the_sidebar_summary(monkeypatch, 
     monkeypatch.setattr(links, "link_builder", lambda: _link)
     source.set_scope_predicate(lambda st, b: True)
 
-    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None):
+    async def fake_publish(binding, snapshot, *, link_for, owner_id="", admits=None, **_kw):
         return answer
 
     monkeypatch.setattr(publisher, "publish", fake_publish)
