@@ -130,6 +130,7 @@ async def publish(
     owner_id: str = "",
     tabs: render.Tabs | None = None,
     urgent: bool = False,
+    in_scope: Callable[[], bool] | None = None,
 ) -> str:
     """Bring the channel's board up to *snapshot*; returns what it did (for tests/logs).
 
@@ -137,7 +138,10 @@ async def publish(
     word (``no_slack``, ``denied``, ``archived``, ``stopped``, ``failed``).
     *tabs* deep-links the channel's own tabs from the board; a board Slack refuses
     with them is sent again without them (and stays without them in this process)
-    before the plan block itself is given up.
+    before the plan block itself is given up. *in_scope* (synchronous, the
+    board's scope check) is asked right before each send of the board (retries
+    included) and before its needs-you alert: this publish's own awaits may
+    outlive the channel's scope.
     """
     if snapshot is None:
         return ""
@@ -162,6 +166,11 @@ async def publish(
         return links.get(key, "")
 
     record = await get_async(channel)
+    from kiro_crew.slack.code_channels.board import stops
+
+    # The last await before rendering: a worker that moved to a newer turn
+    # meanwhile is not shown as stopped.
+    snapshot = stops.reconcile(snapshot)
     ts = _unsaved_ts.get(channel) or (record.board_ts if record else "")
     pinned = bool(record.board_pinned) if record else False
     done = ""
@@ -200,6 +209,10 @@ async def publish(
                 block_seed=uuid.uuid4().hex[:12],
                 tabs=tabs,
             )
+            if in_scope is not None and not in_scope():
+                # Right before each send (retries included): the awaits above may
+                # have outlived the channel's scope (shared, or its slot relinked).
+                return "out_of_scope"
             try:
                 if ts:
                     await slack.update_message(channel, ts, text, blocks)
@@ -274,7 +287,8 @@ async def publish(
     if ts:
         await _record_link(slack, channel, ts)
         await _record_summary(binding, ts)
-        await _alert(slack, channel, ts, snapshot, _link, owner_id)
+        if in_scope is None or in_scope():
+            await _alert(slack, channel, ts, snapshot, _link, owner_id, in_scope=in_scope)
     if ts and active:
         # The stamp's own deadline, from the last EDIT: the caller re-arms the
         # refresh for then, so a live board that nothing else moves is still
@@ -465,8 +479,15 @@ async def _alert(
     snapshot: model.BoardSnapshot,
     link_for: Callable[[str], str],
     owner_id: str,
+    *,
+    in_scope: Callable[[], bool] | None = None,
 ) -> None:
-    """Thread one owner mention per worker report that waits on a person."""
+    """Thread one owner mention per worker report that waits on a person.
+
+    *in_scope* (the board's scope check) is asked right before each mention:
+    the record read and each post await, and a channel that left the scope
+    meanwhile gets no further mention (the ones already sent stay recorded).
+    """
     waiting = [row for row in snapshot.rows if row.needs_owner]
     record = await get_async(channel)
     unsaved = _unsaved_alerts.get(channel)
@@ -479,6 +500,8 @@ async def _alert(
     sent = kept
     fresh = [row for row in waiting if alert_token(row) not in sent]
     for row in fresh:
+        if in_scope is not None and not in_scope():
+            break
         try:
             await slack.post_message(
                 channel, render.needs_you_text(row, owner_id, link_for), thread_ts=board_ts

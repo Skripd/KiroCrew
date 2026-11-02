@@ -57,9 +57,11 @@ NOT_ON_BOARD_TEXT = "That worker isn't on this channel's board any more."
 FAILED_TEXT = "That Stop could not be completed. Nothing was stopped by it; try again."
 #: A ledger item id (``it_<hex>``): anything else is not one of ours.
 _ITEM_ID = re.compile(r"^it_[0-9a-f]{8,32}$")
-#: A second Stop for the same worker this soon is answered without stopping again.
+#: A second Stop for the same worker TURN this soon is answered without stopping
+#: again; a Stop aimed at its next (queued) turn is a new stop.
 _REPEAT_SECS = 5.0
-_recent: dict[tuple[str, str], float] = {}
+#: ``(channel, item id) -> (monotonic time, stopped turn generation)``.
+_recent: dict[tuple[str, str], tuple[float, int]] = {}
 _MAX_TRACKED = 4096
 
 
@@ -184,11 +186,6 @@ async def _handle(orch: Any, payload: dict[str, Any]) -> str:
         return await deny("not a worker on this board", NOT_ON_BOARD_TEXT)
     title = _escape(str(getattr(row, "title", "") or "that worker"))
     mark = (click.channel, value)
-    now = time.monotonic()
-    if now - _recent.get(mark, -_REPEAT_SECS) < _REPEAT_SECS:
-        surface.audit(click.user, OPERATION, "allowed", f"{resources} result=repeat")
-        await respond(f"Already stopping *{title}*.")
-        return "repeat"
     from kiro_crew.dashboard.chat_handlers import stop_slot_turn
     from kiro_crew.messaging.identity import channel_inbound_permitted
 
@@ -217,18 +214,38 @@ async def _handle(orch: Any, payload: dict[str, Any]) -> str:
             )
         )
         return await deny(verdict, text)
-    slot, cancel_key = verdict
+    slot, cancel_key, generation = verdict
+    now = time.monotonic()
+    seen = _recent.get(mark)
+    if seen is not None and seen[1] == generation and now - seen[0] < _REPEAT_SECS:
+        # The same turn, pressed again: answered, never re-sent.
+        surface.audit(click.user, OPERATION, "allowed", f"{resources} result=repeat")
+        await respond(f"Already stopping *{title}*.")
+        return "repeat"
     if len(_recent) > _MAX_TRACKED:
         _recent.clear()
-    _recent[mark] = now
+    entry = (now, generation)
+    _recent[mark] = entry
     # The dashboard Stop's own cancel on the WORKER's slot only, pinned to the
     # session the gate just checked, never escalated: a second click is
     # answered, not turned into a kill.
-    result = await stop_slot_turn(
-        state, slot, source="slack", escalate=False, cancel_key=cancel_key
-    )
+    try:
+        result = await stop_slot_turn(
+            state, slot, source="slack", escalate=False, cancel_key=cancel_key
+        )
+    except BaseException:
+        # Nothing was stopped by this press: a retry is a fresh stop.
+        if _recent.get(mark) is entry:
+            _recent.pop(mark, None)
+        raise
     info = str(result.get("info") or "stopping")
     surface.audit(click.user, OPERATION, "allowed", f"{resources} slot={slot.key} result={info}")
+    # The stop awaited: the title is the ledger's, so it is said only while the
+    # channel is still in the board's scope; otherwise the worker goes unnamed and
+    # no "Stopped by" line is noted for a board the channel may not see.
+    in_scope = source.scope_admits(state, binding)
+    if not in_scope:
+        title = "that worker"
     if result.get("compacting"):
         _recent.pop(mark, None)
         await respond(f"*{title}* is compacting its context and can't stop yet. Try again shortly.")
@@ -242,14 +259,16 @@ async def _handle(orch: Any, payload: dict[str, Any]) -> str:
         _recent.pop(mark, None)
         await respond(f"*{title}* isn't running.")
         return "stop:idle"
-    await respond(f"Stopping *{title}*. The conductor keeps going.")
     from kiro_crew.slack.code_channels import board
     from kiro_crew.slack.code_channels.board import stops
 
     # The board and the Workers tab say who stopped it, from the next refresh
-    # until the worker's next turn starts.
-    stops.note(slot, click.user)
-    board.note_session_turn(str(slot.key))
+    # until the worker's next turn starts. Noted for the generation the final
+    # gate read, so a queued turn that already started is never marked.
+    if in_scope:
+        stops.note(slot, click.user, generation=generation)
+        board.note_session_turn(str(slot.key))
+    await respond(f"Stopping *{title}*. The conductor keeps going.")
     return f"stop:{info}"
 
 
@@ -275,8 +294,9 @@ def _final_gate(
     worker: str,
     *,
     cfg: Any,
-) -> tuple[Any, str] | str:
-    """``(worker slot, cancel key)`` the stop may land on, or why it may not.
+) -> tuple[Any, str, int] | str:
+    """``(worker slot, cancel key, stopped turn generation)`` the stop may land on,
+    or why it may not.
 
     Synchronous and disk-free, so it sits directly before the stop: the channel's
     binding is still the one admitted (same session and anchor, not archived),
@@ -311,6 +331,10 @@ def _final_gate(
         return "not this channel's Workers tab"
     if not actions._may_stop(orch, current, click.user, cfg=cfg):
         return "unauthorized sender"
+    if not source.scope_admits(state, current):
+        # The board read admitted the channel; it may have turned shared (or its
+        # slot been relinked) since. Its worker is not one this channel may see.
+        return "not a worker on this board"
     conductor = session_ledger.ledger_key(current.session_key)
     slot = source.find_slot(state, worker)
     if slot is None or session_ledger.ledger_key(str(slot.key)) == conductor:
@@ -327,7 +351,11 @@ def _final_gate(
     owner = surface.caller_slot_key(state, cancel_key)
     if not cancel_key or owner != slot.key or session_ledger.ledger_key(owner) == conductor:
         return "the cancel target is not that worker"
-    return slot, cancel_key
+    from kiro_crew.slack.code_channels.board.stops import generation_of
+
+    # The turn this stop is aimed at, read here, before the stop awaits: a queued
+    # turn that starts meanwhile is a new generation nobody stopped.
+    return slot, cancel_key, generation_of(slot)
 
 
 def _workspace_still_admitted(team_id: str) -> bool:

@@ -209,6 +209,19 @@ def _tab_block(facts: Facts, channel_id: str) -> dict[str, Any] | None:
     }
 
 
+def _in_scope(facts: Facts, binding: Binding) -> Facts:
+    """*facts* without what the conductor's ledger supplied, unless the board's scope
+    still admits the channel: the workers' outcomes and their PR tabs go, the
+    channel's own PR tab (from its workspace record) stays. Synchronous: asked
+    right before the wrap-up is built and again right before it is posted."""
+    from kiro_crew.slack.code_channels.board import source
+
+    if source.scope_admits(surface.dashboard_state(), binding):
+        return facts
+    own = facts.pr_number if facts.pr_state in ("open", "draft") else 0
+    return replace(facts, workers=(), pr_tabs=tuple(t for t in facts.pr_tabs if t[0] == own))
+
+
 async def gather_facts(binding: Binding) -> Facts:
     try:
         facts = await asyncio.to_thread(_gather_facts_sync, binding)
@@ -221,7 +234,7 @@ async def gather_facts(binding: Binding) -> Facts:
     except Exception:
         logger.debug("code channel %s: worker outcomes unavailable", binding.channel_id)
         lines = []
-    return replace(facts, workers=tuple(lines)) if lines else facts
+    return _in_scope(replace(facts, workers=tuple(lines)) if lines else facts, binding)
 
 
 _PR_WORDS = {"open": "open", "draft": "draft", "merged": "merged", "closed": "closed"}
@@ -434,6 +447,11 @@ async def post_wrap_up(binding: Binding, summary: str, *, caller: str) -> str:
                 caller, "slack.code_channel.wrap_up", "denied", f"channel={channel}", "archived"
             )
             return ""
+        scoped = _in_scope(facts, binding)
+        if scoped != facts:
+            # The scope changed while the facts were read: rebuilt without
+            # what the conductor's ledger supplied, right before the post.
+            facts, blocks = scoped, wrap_up_blocks(summary, scoped, channel)
         try:
             ts = str(await slack.post_blocks(channel, blocks, fallback) or "")
         except Exception as exc:
@@ -448,6 +466,15 @@ async def post_wrap_up(binding: Binding, summary: str, *, caller: str) -> str:
                 # button go out without them rather than not at all.
                 logger.info("code channel %s: wrap-up tab links refused (%s)", channel, refused)
                 try:
+                    # Asked again: the failed post awaited.
+                    scoped = _in_scope(facts, binding)
+                    if scoped != facts:
+                        facts = scoped
+                        plain = [
+                            b
+                            for b in wrap_up_blocks(summary, scoped, channel)
+                            if b.get("type") != "rich_text"
+                        ]
                     blocks = plain
                     ts = str(await slack.post_blocks(channel, blocks, fallback) or "")
                 except Exception:

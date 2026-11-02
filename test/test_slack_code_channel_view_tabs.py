@@ -8,6 +8,7 @@ worker it stops, who may press it) were each revert-verified.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -1386,7 +1387,7 @@ async def test_a_fresh_stop_skips_both_edit_gaps_once(env: Any, monkeypatch: Any
     assert await board.publish(binding, working) == "posted"
     clock["now"] += 1
     env.clock.now += 1
-    stops.note(slot, OWNER)
+    stops.note(slot, OWNER, generation=3)
     stopped = model.BoardSnapshot(
         rows=(_row(session_key="chat-w1", stopped_by=OWNER, stopped_at="13:31"),)
     )
@@ -1659,3 +1660,476 @@ async def test_the_final_gate_resolves_no_config_and_composes_no_context(
     monkeypatch.setattr(source, "read_board", read_board)
     assert (await worker_stop._handle(env.orch, _stop_payload())).startswith("stop:")
     assert reached == [] and len(stop_world.stopped) == 1
+
+
+@pytest.mark.parametrize("when", ["during_stop", "during_reply"])
+@pytest.mark.asyncio
+async def test_a_queued_turn_that_starts_after_the_stop_is_never_marked_stopped(
+    env: Any, stop_world: Any, monkeypatch: Any, when: str
+) -> None:
+    slot = stop_world.slots["chat-w1"]
+    slot._turn_generation = 7
+    if when == "during_stop":
+
+        async def stop_slot_turn(state: Any, s: Any, **kw: Any) -> dict[str, Any]:
+            stop_world.stopped.append((s.key, kw))
+            s._turn_generation += 1  # the cancelled turn ended; a queued one started
+            return {"info": ""}
+
+        monkeypatch.setattr("kiro_crew.dashboard.chat_handlers.stop_slot_turn", stop_slot_turn)
+    else:
+        real_responder = worker_stop.actions._responder
+
+        def responder(channel: str, user: str) -> Any:
+            send = real_responder(channel, user)
+
+            async def _send(text: str) -> None:
+                slot._turn_generation += 1  # the queued turn starts mid-reply
+                await send(text)
+
+            return _send
+
+        monkeypatch.setattr(worker_stop.actions, "_responder", responder)
+    assert (await worker_stop._handle(env.orch, _stop_payload())).startswith("stop:")
+    assert len(stop_world.stopped) == 1
+    # The running turn is the queued follow-up: nobody stopped it.
+    row = _project(env.state, model.LIVE_RUNNING).rows[0]
+    assert not row.stopped and row.stopped_by == ""
+    blocks = render.workers_view_blocks(
+        model.BoardSnapshot(rows=(row,)), _link, tabs=_TABS, now=_NOW
+    )
+    by_id = {b.get("block_id"): b for b in blocks}
+    assert "kc_cc_worker_stop" in [e["action_id"] for e in by_id["worker-it_00000001"]["elements"]]
+
+
+@pytest.mark.asyncio
+async def test_a_stop_aimed_at_the_next_queued_turn_is_a_new_stop(
+    env: Any, stop_world: Any
+) -> None:
+    slot = stop_world.slots["chat-w1"]
+    slot._turn_generation = 7
+    assert (await worker_stop._handle(env.orch, _stop_payload(ts="3.1"))).startswith("stop:")
+    slot._turn_generation = 8  # its queued follow-up started, and shows Stop
+    assert (await worker_stop._handle(env.orch, _stop_payload(ts="3.2"))).startswith("stop:")
+    assert len(stop_world.stopped) == 2
+    # The same turn pressed again inside the window is still only answered.
+    assert await worker_stop._handle(env.orch, _stop_payload(ts="3.3")) == "repeat"
+    assert len(stop_world.stopped) == 2
+
+
+@pytest.mark.parametrize("failure", [RuntimeError, asyncio.CancelledError])
+@pytest.mark.asyncio
+async def test_a_stop_that_raises_leaves_no_repeat_mark(
+    env: Any, stop_world: Any, monkeypatch: Any, failure: type[BaseException]
+) -> None:
+    calls: list[str] = []
+
+    async def stop_slot_turn(state: Any, s: Any, **kw: Any) -> dict[str, Any]:
+        calls.append(s.key)
+        if len(calls) == 1:
+            raise failure()
+        stop_world.stopped.append((s.key, kw))
+        return {"info": ""}
+
+    monkeypatch.setattr("kiro_crew.dashboard.chat_handlers.stop_slot_turn", stop_slot_turn)
+    with pytest.raises(failure):
+        await worker_stop._handle(env.orch, _stop_payload(ts="4.1"))
+    # Pressed again at once: a fresh stop, not "Already stopping".
+    assert (await worker_stop._handle(env.orch, _stop_payload(ts="4.2"))).startswith("stop:")
+    assert len(stop_world.stopped) == 1
+
+
+def test_a_late_note_for_an_earlier_turn_keeps_the_later_turns_stop() -> None:
+    from kiro_crew.slack.code_channels.board import stops
+
+    stops.reset_for_tests()
+    slot = SimpleNamespace(key="chat-w1", _turn_generation=8)
+    stops.note(slot, OWNER, generation=8)  # stop B, on turn 8
+    stops.note(slot, OWNER, generation=7)  # stop A resumes late, for turn 7
+    state = SimpleNamespace(get_slot=lambda key: slot if key == "chat-w1" else None)
+    held = stops.current(state, "chat-w1")
+    assert held is not None and held.generation == 8
+
+
+@pytest.mark.asyncio
+async def test_a_snapshot_read_before_the_next_turn_publishes_no_stopped_line(
+    env: Any, monkeypatch: Any
+) -> None:
+    from kiro_crew.slack.code_channels import board
+    from kiro_crew.slack.code_channels.board import stops
+
+    binding = _bind(env)
+    _set_views(env)
+    slot = SimpleNamespace(key="chat-w1", _turn_generation=3)
+    env.state.get_slot = lambda key: slot if key == "chat-w1" else None
+    fake = _Refusing(refuse=0)
+    fake.updates: list[Any] = []  # type: ignore[misc]
+
+    async def update_message(channel: str, ts: str, text: str = "", blocks: Any = None) -> None:
+        fake.updates.append(blocks)
+
+    fake.update_message = update_message  # type: ignore[method-assign]
+    monkeypatch.setattr(surface, "slack", lambda: fake)
+    real = surface.SurfaceClient(env.api.api_call)
+    monkeypatch.setattr(surface, "client", lambda: real)
+    monkeypatch.setattr(surface, "dashboard_state", lambda: env.state)
+    publisher.forget(CH)
+    stops.note(slot, OWNER, generation=3)
+    # Read while turn 3 was the stopped one...
+    stale = model.BoardSnapshot(
+        rows=(_row(session_key="chat-w1", stopped_by=OWNER, stopped_at="13:31"),)
+    )
+    slot._turn_generation = 4  # ...then the queued turn 4 started before the publish.
+    await board.publish(binding, stale)
+    sent = _calls(env, "agents.conversations.setView")
+    assert sent and "Stopped by" not in json.dumps(sent[-1]["blocks"])
+    assert all("Stopped by" not in json.dumps(b) for b in fake.sent + fake.updates)
+    assert stops.take_urgent(["chat-w1"]) is False  # no edit-gap skip left over
+
+
+@pytest.mark.parametrize("path", ["workers_tab", "board"])
+@pytest.mark.asyncio
+async def test_a_turn_starting_during_a_publishers_last_read_shows_no_stopped_line(
+    env: Any, monkeypatch: Any, path: str
+) -> None:
+    from kiro_crew.slack.code_channels.board import stops
+
+    binding = _bind(env)
+    _set_views(env)
+    slot = SimpleNamespace(key="chat-w1", _turn_generation=3)
+    env.state.get_slot = lambda key: slot if key == "chat-w1" else None
+    monkeypatch.setattr(surface, "dashboard_state", lambda: env.state)
+    fake = _Refusing(refuse=0)
+    monkeypatch.setattr(surface, "slack", lambda: fake)
+    monkeypatch.setattr(surface, "client", lambda: surface.SurfaceClient(env.api.api_call))
+    publisher.forget(CH)
+    stops.note(slot, OWNER, generation=3)
+    stale = model.BoardSnapshot(
+        rows=(_row(session_key="chat-w1", stopped_by=OWNER, stopped_at="13:31"),)
+    )
+    mod = tabs if path == "workers_tab" else publisher
+    real_get = mod.get_async
+
+    async def get_async(channel: str) -> Any:
+        slot._turn_generation = 4  # the queued turn starts during the publisher's read
+        return await real_get(channel)
+
+    monkeypatch.setattr(mod, "get_async", get_async)
+    if path == "workers_tab":
+        await tabs.publish_workers(binding, stale, link_for=_link, urgent=True)
+        sent = [c["blocks"] for c in _calls(env, "agents.conversations.setView")]
+    else:
+        await publisher.publish(binding, stale, link_for=_link, urgent=True)
+        sent = list(fake.sent)
+    assert sent and all("Stopped by" not in json.dumps(b) for b in sent)
+    assert stops.take_urgent(["chat-w1"]) is False  # the stale mark is gone too
+
+
+# ── The board's scope, asked again across every await of the tab paths ────
+
+
+def _scope_flag(monkeypatch: Any) -> dict[str, bool]:
+    flag = {"in": True}
+    monkeypatch.setattr(source, "scope_admits", lambda state, binding: flag["in"])
+    return flag
+
+
+@pytest.mark.parametrize("when", ["code_tab", "tab_read", "board_read"])
+@pytest.mark.asyncio
+async def test_a_channel_leaving_the_scope_mid_publish_gets_no_tab_and_no_board(
+    env: Any, monkeypatch: Any, when: str
+) -> None:
+    from kiro_crew.slack.code_channels import board
+
+    binding = _bind(env)
+    _set_views(env)
+    flag = _scope_flag(monkeypatch)
+    fake = _Refusing(refuse=0)
+    monkeypatch.setattr(surface, "slack", lambda: fake)
+    monkeypatch.setattr(surface, "client", lambda: surface.SurfaceClient(env.api.api_call))
+    publisher.forget(CH)
+    if when == "code_tab":
+
+        async def code_tab(_b: Any) -> bool:
+            flag["in"] = False  # the channel turned shared meanwhile
+            return False
+
+        monkeypatch.setattr(board, "_code_tab_shown", code_tab)
+    elif when == "board_read":
+        real_board_get = publisher.get_async
+
+        async def board_get(channel: str) -> Any:
+            flag["in"] = False  # ...or while the board message read its record
+            return await real_board_get(channel)
+
+        monkeypatch.setattr(publisher, "get_async", board_get)
+    else:
+        real_get = tabs.get_async
+
+        async def get_async(channel: str) -> Any:
+            flag["in"] = False  # ...or while the Workers tab read its record
+            return await real_get(channel)
+
+        monkeypatch.setattr(tabs, "get_async", get_async)
+    snap = model.BoardSnapshot(rows=(_row(session_key="chat-w1"),))
+    assert await board.publish(binding, snap) == "out_of_scope"
+    if when != "board_read":  # (the Workers tab went out before the board's read)
+        assert _calls(env, "agents.conversations.setView") == []
+    assert fake.sent == []
+
+
+@pytest.mark.asyncio
+async def test_a_channel_leaving_the_scope_mid_sync_gets_no_pr_tab_write_or_removal(
+    env: Any, monkeypatch: Any
+) -> None:
+    binding = _bind(env)
+    _set_views(env)
+    flag = _scope_flag(monkeypatch)
+    both = [
+        tabs.PrRef(42, PR_URL.format(n=42), "open"),
+        tabs.PrRef(12, PR_URL.format(n=12), "open"),
+    ]
+    await tabs.sync_pr_tabs(binding, both)
+    writes = len(_calls(env, "agents.conversations.setView"))
+
+    async def relist(client: Any, channel: str, record: Any) -> Any:
+        flag["in"] = False  # the scope goes while Slack's list is read
+        return record
+
+    monkeypatch.setattr(tabs, "_relist", relist)
+    newer = [tabs.PrRef(60, PR_URL.format(n=60), "open")]
+    await tabs.sync_pr_tabs(binding, newer, settled={12, 42})
+    assert len(_calls(env, "agents.conversations.setView")) == writes
+    assert _calls(env, "agents.conversations.removeView") == []
+
+
+@pytest.mark.parametrize("when", ["before_read", "before_post"])
+@pytest.mark.asyncio
+async def test_a_wrap_up_out_of_scope_links_no_worker_pr_tab_and_no_outcomes(
+    env: Any, monkeypatch: Any, when: str
+) -> None:
+    from kiro_crew.slack.code_channels import board
+
+    binding = _bind(env)
+    flag = _scope_flag(monkeypatch)
+    fake = _Refusing(refuse=0)
+    monkeypatch.setattr(surface, "slack", lambda: fake)
+    monkeypatch.setattr(surface, "client", lambda: None)
+    surface_store().update(
+        CH, views=[_v("pr-10", "pull_request", "1"), _v("pr-33", "pull_request", "2")]
+    )
+    # The channel's own PR 10, and worker PR 33 from the cached board.
+    monkeypatch.setattr(
+        wrapup,
+        "_gather_facts_sync",
+        lambda b: wrapup.Facts(
+            pr_number=10,
+            pr_state="open",
+            code_tab=True,
+            pr_tabs=wrapup._pr_tabs(CH, {10, 33}),
+        ),
+    )
+
+    async def lines(_b: Any) -> list[str]:
+        return ["• Fix login: PR #33 open"]
+
+    monkeypatch.setattr(board, "outcome_lines", lines)
+    if when == "before_read":
+        flag["in"] = False
+    else:
+        real = surface.is_archived
+
+        async def is_archived(b: Any) -> bool:
+            flag["in"] = False  # the scope goes between the facts and the post
+            return await real(b)
+
+        monkeypatch.setattr(surface, "is_archived", is_archived)
+    assert await wrapup.post_wrap_up(binding, "All done.", caller=OWNER)
+    posted = json.dumps(fake.sent[-1])
+    assert "Vpr33" not in posted and "Fix login" not in posted
+    assert "Vpr10" in posted  # the channel's own PR tab stays
+
+
+@pytest.mark.asyncio
+async def test_a_stop_out_of_scope_after_the_board_read_stops_nothing(
+    env: Any, stop_world: Any, monkeypatch: Any
+) -> None:
+    flag = _scope_flag(monkeypatch)
+    real = source.read_board
+
+    async def read_board(state: Any, b: Binding) -> Any:
+        snapshot = await real(state, b)
+        flag["in"] = False  # the channel turned shared after the read
+        return snapshot
+
+    monkeypatch.setattr(source, "read_board", read_board)
+    assert await worker_stop._handle(env.orch, _stop_payload()) == "denied"
+    assert stop_world.stopped == []
+    assert "Fix login" not in env.slack.ephemerals[-1][2]
+
+
+@pytest.mark.asyncio
+async def test_a_stop_whose_channel_leaves_the_scope_meanwhile_names_no_worker(
+    env: Any, stop_world: Any, monkeypatch: Any
+) -> None:
+    from kiro_crew.slack.code_channels.board import stops
+
+    flag = _scope_flag(monkeypatch)
+
+    async def stop_slot_turn(state: Any, s: Any, **kw: Any) -> dict[str, Any]:
+        stop_world.stopped.append((s.key, kw))
+        flag["in"] = False  # shared while the stop ran
+        return {"info": ""}
+
+    monkeypatch.setattr("kiro_crew.dashboard.chat_handlers.stop_slot_turn", stop_slot_turn)
+    assert (await worker_stop._handle(env.orch, _stop_payload())).startswith("stop:")
+    assert len(stop_world.stopped) == 1  # the stop itself was admitted, and ran
+    assert env.slack.ephemerals[-1][2] == "Stopping *that worker*. The conductor keeps going."
+    assert stops.current(env.state, "chat-w1") is None and stop_world.noted == []
+
+
+@pytest.mark.parametrize("when", ["before_send", "before_alert", "control"])
+@pytest.mark.asyncio
+async def test_a_board_publish_out_of_scope_before_a_send_sends_nothing(
+    env: Any, monkeypatch: Any, when: str
+) -> None:
+    binding = _bind(env)
+    flag = _scope_flag(monkeypatch)
+    fake = _Refusing(refuse=0)
+    alerts: list[Any] = []
+
+    async def post_message(*a: Any, **k: Any) -> str:
+        alerts.append((a, k))
+        return "100.2"
+
+    fake.post_message = post_message  # type: ignore[method-assign]
+    monkeypatch.setattr(surface, "slack", lambda: fake)
+    publisher.forget(CH)
+    real_get = publisher.get_async
+    reads = {"n": 0}
+
+    async def get_async(channel: str) -> Any:
+        reads["n"] += 1
+        if when == "before_send":
+            flag["in"] = False  # during the publish's own record read
+        return await real_get(channel)
+
+    monkeypatch.setattr(publisher, "get_async", get_async)
+    if when == "before_alert":
+        real_summary = publisher._record_summary
+
+        async def record_summary(b: Any, ts: str) -> None:
+            flag["in"] = False  # after the board went out, before its alert
+            await real_summary(b, ts)
+
+        monkeypatch.setattr(publisher, "_record_summary", record_summary)
+    waiting = model.BoardSnapshot(
+        rows=(
+            _row(
+                state=model.WAITING_ON_YOU,
+                session_key="chat-w1",
+                report_stamp="r1",
+                waiting_on="report",
+            ),
+        )
+    )
+    out = await publisher.publish(
+        binding,
+        waiting,
+        link_for=_link,
+        owner_id=OWNER,
+        in_scope=lambda: source.scope_admits(None, binding),
+    )
+    if when == "before_send":
+        assert out == "out_of_scope" and fake.sent == []
+    elif when == "before_alert":
+        assert fake.sent and alerts == []
+    else:  # in scope throughout: the alert does go out
+        assert fake.sent and alerts
+
+
+@pytest.mark.asyncio
+async def test_a_wrap_up_retried_without_tab_links_is_scoped_again(
+    env: Any, monkeypatch: Any
+) -> None:
+    from kiro_crew.slack.code_channels import board
+
+    binding = _bind(env)
+    flag = _scope_flag(monkeypatch)
+    fake = _Refusing(refuse=1)
+    real_post = fake.post_blocks
+
+    async def post_blocks(channel: str, blocks: Any, text: str, thread_ts: Any = None) -> str:
+        if len(fake.sent) == 0:
+            flag["in"] = False  # shared while the first (refused) post was out
+        return await real_post(channel, blocks, text, thread_ts)
+
+    fake.post_blocks = post_blocks  # type: ignore[method-assign]
+    monkeypatch.setattr(surface, "slack", lambda: fake)
+    monkeypatch.setattr(surface, "client", lambda: None)
+    monkeypatch.setattr(
+        wrapup, "_gather_facts_sync", lambda b: wrapup.Facts(code_tab=True, branch="x")
+    )
+
+    async def lines(_b: Any) -> list[str]:
+        return ["• Fix login: PR #33 open"]
+
+    monkeypatch.setattr(board, "outcome_lines", lines)
+    assert await wrapup.post_wrap_up(binding, "All done.", caller=OWNER)
+    assert "Fix login" in json.dumps(fake.sent[0])  # in scope when first built
+    assert "Fix login" not in json.dumps(fake.sent[1])  # the retry is scoped again
+
+
+@pytest.mark.parametrize("when", ["alert_read", "between_alerts"])
+@pytest.mark.asyncio
+async def test_a_channel_leaving_the_scope_during_the_alerts_gets_no_further_mention(
+    env: Any, monkeypatch: Any, when: str
+) -> None:
+    binding = _bind(env)
+    flag = _scope_flag(monkeypatch)
+    fake = _Refusing(refuse=0)
+    alerts: list[Any] = []
+
+    async def post_message(*a: Any, **k: Any) -> str:
+        alerts.append((a, k))
+        if when == "between_alerts":
+            flag["in"] = False  # shared right after the first mention went out
+        return "100.2"
+
+    fake.post_message = post_message  # type: ignore[method-assign]
+    monkeypatch.setattr(surface, "slack", lambda: fake)
+    publisher.forget(CH)
+    if when == "alert_read":
+        real_alert = publisher._alert
+        real_get = publisher.get_async
+
+        async def alert(*a: Any, **k: Any) -> None:
+            async def get_async(channel: str) -> Any:
+                flag["in"] = False  # shared during the alert's own record read
+                return await real_get(channel)
+
+            monkeypatch.setattr(publisher, "get_async", get_async)
+            await real_alert(*a, **k)
+
+        monkeypatch.setattr(publisher, "_alert", alert)
+    waiting = model.BoardSnapshot(
+        rows=tuple(
+            _row(
+                f"it_0000000{n}",
+                state=model.WAITING_ON_YOU,
+                session_key=f"chat-w{n}",
+                report_stamp="r1",
+                waiting_on="report",
+            )
+            for n in (1, 2)
+        )
+    )
+    await publisher.publish(
+        binding,
+        waiting,
+        link_for=_link,
+        owner_id=OWNER,
+        in_scope=lambda: source.scope_admits(None, binding),
+    )
+    assert fake.sent  # the board itself went out while in scope
+    assert len(alerts) == (0 if when == "alert_read" else 1)

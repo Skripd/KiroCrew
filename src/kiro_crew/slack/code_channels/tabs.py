@@ -192,11 +192,20 @@ def _refusal(channel: str, key: str, view_type: str, exc: CodeChannelApiError) -
 
 
 async def _may_write(binding: Any) -> bool:
-    """The fences every write to the channel honours (archive, Stop, the channels policy)."""
+    """The fences every write to the channel honours (archive, Stop, the channels
+    policy, and the board's scope: the Workers tab and the PR tabs show what the
+    conductor's ledger holds, so a channel that turned shared, or whose slot was
+    relinked, gets no tab write and no tab removal from here)."""
+    from kiro_crew.slack.code_channels.board import source
+
     channel = str(getattr(binding, "channel_id", "") or "")
     if not channel or await surface.is_archived(binding) or surface.channel_stopped(channel):
         return False
-    return await surface.outbound_permitted()
+    if not await surface.outbound_permitted():
+        return False
+    # Last, after the awaits above, and synchronous: asked again right before
+    # each send and each removal (``_fenced_write`` / ``_fence``).
+    return source.scope_admits(surface.dashboard_state(), binding)
 
 
 def _fence(binding: Any) -> Callable[[], Awaitable[bool]]:
@@ -422,6 +431,11 @@ async def _publish_workers(
     if not await _may_write(binding):
         return "fenced"
     record = await get_async(channel)
+    from kiro_crew.slack.code_channels.board import stops
+
+    # The last await before rendering: a worker that moved to a newer turn
+    # meanwhile is not shown as stopped.
+    snapshot = stops.reconcile(snapshot)
     exists = views.recorded(record, key) is not None
     rows = tuple(getattr(snapshot, "rows", ()) or ())
     if not rows and not exists:
