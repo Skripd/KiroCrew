@@ -944,6 +944,71 @@ class TestSwapRollback:
         )
         assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".")] == []
 
+    @staticmethod
+    def _windows_held_new_tree(engine: Path, *, also_refuse_restore: bool = False):
+        """An `os.replace` that refuses to move the new tree out of `engine_root`.
+
+        Windows raises `PermissionError [WinError 5]` renaming a directory while any
+        file in it is open (a surviving `uv` child, an antivirus scan). POSIX
+        allows that rename, so the refusal is simulated here.
+        """
+        real = os.replace
+
+        def replace(src, dst):  # noqa: ANN001 - matches os.replace
+            src, dst = Path(src), Path(dst)
+            if src == engine and ".new." in dst.name:
+                raise PermissionError(13, "Access is denied")
+            if also_refuse_restore and dst == engine and ".old." in src.name:
+                raise PermissionError(13, "Access is denied")
+            return real(src, dst)
+
+        return mock.patch.object(engine_source.os, "replace", replace)
+
+    @pytest.mark.parametrize("mode", ["returns_false", "raises"])
+    def test_a_rollback_that_cannot_move_the_new_tree_out_keeps_the_old_engine(
+        self, tmp_path: Path, mode: str
+    ) -> None:
+        """The old engine is restored even when the new tree cannot be renamed.
+
+        If the rollback's first rename raising skipped the restore, the `finally`
+        would see a populated `engine_root` and delete the retired tree: the user's
+        working engine gone and the unfinalized one reading as installed.
+        """
+        engine, extracted = self._trees(tmp_path)
+        engine_source.write_source_marker(extracted)
+
+        def finalize(final: Path) -> bool:
+            if mode == "raises":
+                raise OSError("relink failed")
+            return False
+
+        with self._windows_held_new_tree(engine):
+            if mode == "raises":
+                with pytest.raises(OSError, match="relink failed"):
+                    engine_source._swap_in(extracted, engine, finalize)
+            else:
+                assert engine_source._swap_in(extracted, engine, finalize) is False
+
+        assert (engine / "WORKING").read_text(encoding="utf-8") == "v1"
+        assert not (engine / "NEW").exists()
+        assert not engine_source.is_installed(engine)
+        assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".")] == []
+
+    def test_a_rollback_that_cannot_restore_preserves_the_retired_tree(
+        self, tmp_path: Path
+    ) -> None:
+        """When the old tree cannot go back, it stays at `retired`, never deleted."""
+        engine, extracted = self._trees(tmp_path)
+        engine_source.write_source_marker(extracted)
+
+        with self._windows_held_new_tree(engine, also_refuse_restore=True):
+            assert engine_source._swap_in(extracted, engine, lambda final: False) is False
+
+        kept = [p for p in tmp_path.iterdir() if ".old." in p.name]
+        assert len(kept) == 1
+        assert (kept[0] / "WORKING").read_text(encoding="utf-8") == "v1"
+        assert not engine_source.is_installed(engine)
+
     def test_a_successful_finalize_keeps_the_new_tree(self, tmp_path: Path) -> None:
         """The rollback must not fire on success — a fix that always restored the old
         tree would satisfy the test above."""
