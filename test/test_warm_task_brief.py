@@ -513,9 +513,14 @@ async def test_one_model_call_and_one_message_that_is_a_structured_brief(
     slot = _Slot()
     state.slots[slot.key] = slot
     state._foreground_slots[1] = slot.key
-    snapshot = _snapshot()
+    snapshot = replace(_snapshot(), pending_options="[OPTIONS: Old]")
+    # A note with new choices lands during the model call: the brief copies
+    # the choices of the last re-read, not of the read before the call.
+    after_call = replace(_claimed(snapshot), pending_options="[OPTIONS: Push | Hold]")
 
     async def read_snapshot(*args, **kwargs):
+        if call_kwargs:
+            return after_call
         return _claimed(snapshot) if slot.flushed else snapshot
 
     kinds_at_call = []
@@ -598,7 +603,9 @@ async def test_one_model_call_and_one_message_that_is_a_structured_brief(
         "You asked: Fix the failing test\n"
         "Done so far:\n- Reproduced the failure\n"
         "Next:\n1. Apply the fix\n2. Rerun CI\n"
-        "Risk:\n- The fix touches a shared helper"
+        "Risk:\n- The fix touches a shared helper\n\n"
+        # The owner's pending choices stay as working buttons under the brief.
+        "[OPTIONS: Push | Hold]"
     )
     prompt = call_kwargs["prompt"]
     assert '"goal": "Fix the test"' in prompt
@@ -1741,3 +1748,149 @@ async def test_work_item_closing_during_the_model_call_still_publishes(monkeypat
 
     assert items[0].state == "accepted"
     assert _brief_kinds(slot) == _FULL_BRIEF
+
+
+def _row(role, content, **meta):
+    return {"role": role, "content": content, "cls": "", "meta": meta}
+
+
+_ASK = "Land it? [OPTIONS: Merge it | Rebase first | Hold]"
+_DONE = (
+    {"item_id": "it_0000000a", "state": "accepted"},
+    {"item_id": "it_0000000b", "state": "open"},
+)
+
+
+@pytest.mark.parametrize(
+    ("rows", "expected"),
+    [
+        # The newest reply's choices are copied, across brief rows, notices and tools.
+        (
+            [
+                _row("assistant", _ASK),
+                _row("tool_call", "x"),
+                _row("notice", "", kind="warm_task_brief_claim"),
+                _row("assistant", "Welcome back.", kind="warm_task_brief_result"),
+                _row("assistant", "compacted", kind="compaction"),
+                _row("assistant", "\u200b"),
+            ],
+            "[OPTIONS: Merge it | Rebase first | Hold]",
+        ),
+        # A hidden map drops only the option tied to an accepted item.
+        (
+            [_row("assistant", _ASK + "\n<!-- option_items: 1=it_0000000a 2=it_0000000b -->")],
+            "[OPTIONS: Rebase first | Hold]",
+        ),
+        (
+            [_row("assistant", "Next? [OPTIONS: Merge it]\n<!-- option_items: 1=it_0000000a -->")],
+            "",
+        ),
+        # No map: every option stays, even one whose label names the id.
+        (
+            [_row("assistant", "[OPTIONS: Merge it_0000000a | Hold]")],
+            "[OPTIONS: Merge it_0000000a | Hold]",
+        ),
+        # A note row with options is a source; a newer marker-less reply is not.
+        (
+            [{"role": "inject", "content": _ASK, "cls": "reconcile-note", "meta": {}}],
+            "[OPTIONS: Merge it | Rebase first | Hold]",
+        ),
+        ([_row("assistant", _ASK), _row("assistant", "Done.")], ""),
+        # An answered or stopped choice is never copied.
+        ([_row("assistant", _ASK), _row("user", "Hold")], ""),
+        ([_row("assistant", _ASK), _row("queued", "Hold")], ""),
+        ([_row("assistant", _ASK), _row("system", "Stopped", kind="stop_event")], ""),
+        ([], ""),
+        # Without a pipe the chip bar splits on commas; positions count the same way.
+        (
+            [
+                _row(
+                    "assistant",
+                    "[OPTIONS: Merge, Rebase, Hold]\n<!-- option_items: 1=it_0000000a -->",
+                )
+            ],
+            "[OPTIONS: Rebase | Hold]",
+        ),
+        # A piped marker keeps comma-bearing labels whole, even one left alone.
+        (
+            [
+                _row(
+                    "assistant",
+                    "[OPTIONS: Rebase, then merge | Hold]\n<!-- option_items: 2=it_0000000a -->",
+                )
+            ],
+            "[OPTIONS: Rebase, then merge |]",
+        ),
+        ([_row("assistant", "[OPTIONS: Rebase, then merge |]")], "[OPTIONS: Rebase, then merge |]"),
+        # A newer single-select note ends the scan; older choices are not resurrected.
+        (
+            [
+                _row("assistant", _ASK),
+                {
+                    "role": "inject",
+                    "content": "[OPTION: Open | Dismiss]",
+                    "cls": "reconcile-note",
+                    "meta": {},
+                },
+            ],
+            "",
+        ),
+        # Only the trailing control-tag block maps options, not a quoted example.
+        (
+            [
+                _row(
+                    "assistant",
+                    "Write `<!-- option_items: 1=it_0000000a -->`.\n[OPTIONS: Start | Hold]",
+                )
+            ],
+            "[OPTIONS: Start | Hold]",
+        ),
+    ],
+)
+def test_pending_options_copies_only_the_chip_bar_source(rows, expected):
+    assert warm_task_brief._pending_options(rows, _DONE) == expected
+
+
+def test_brief_row_carries_the_copied_marker_as_its_last_line(monkeypatch):
+    from kiro_crew.dashboard import state as state_mod
+
+    posted: list[str] = []
+    monkeypatch.setattr(
+        state_mod,
+        "append_and_surface",
+        lambda _state, _slot, _role, content, _cls, meta: posted.append(content) or meta,
+    )
+    kind = "warm_task_brief_result"
+    warm_task_brief._post_message(
+        None, None, "x", kind=kind, fingerprint="f", options="[OPTIONS: A]"
+    )
+    warm_task_brief._post_message(None, None, "x", kind=kind, fingerprint="f")
+
+    assert posted == ["x\n\n[OPTIONS: A]", "x"]
+
+
+def test_waiting_item_keeps_the_ask_as_its_source_under_a_brief_with_copied_buttons():
+    from kiro_crew.dashboard import member_waiting
+
+    rows = [
+        {"role": "assistant", "content": _ASK, "ts": "2026-11-02T10:00:00Z", "meta": {}},
+        {
+            "role": "assistant",
+            "content": "Nothing new since 10:00.\n\n[OPTIONS: Merge it | Rebase first | Hold]",
+            "ts": "2026-11-02T11:00:00Z",
+            "meta": {"kind": "warm_task_brief_result"},
+        },
+    ]
+    (item,) = member_waiting._option_items(rows)
+
+    assert item["text"] == "Land it?"
+    assert item["asked_at"] == "2026-11-02T10:00:00Z"
+
+    # The brief's copied (ledger-checked) choices are the item's choices.
+    rows[1]["content"] = "Nothing new since 10:00.\n\n[OPTIONS: Rebase first | Hold]"
+    (item,) = member_waiting._option_items(rows)
+    assert item["options"] == ["Rebase first", "Hold"]
+
+    # A brief with no copied choices retires the ask, as any newer reply does.
+    rows[1]["content"] = "Nothing new since 10:00."
+    assert member_waiting._option_items(rows) == []
