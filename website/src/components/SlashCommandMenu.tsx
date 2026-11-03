@@ -158,7 +158,10 @@ export default function SlashCommandMenu({ input, anchorRef, onSelect, onClose, 
     [allCommands, hidden],
   )
 
-  const match = input.match(/^\/([a-z]*)$/)
+  // A command name can carry a hyphen, a digit or an underscore after its first
+  // letter (`/security-review`, `/list-dirs`), so the menu keeps filtering
+  // through them; a space ends the name and closes the menu.
+  const match = input.match(/^\/([a-z][a-z0-9_-]*)?$/)
   const visible = open && !!match
   const filter = match?.[1] ?? ''
 
