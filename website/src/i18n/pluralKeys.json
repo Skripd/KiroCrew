@@ -421,5 +421,8 @@
   "apps.codeReviewSage.components.prStatusChips.failing_count",
   "apps.autoResearch.researchLabPage.estimate",
   "apps.autoResearch.researchLabPage.findings_tally",
-  "apps.autoResearch.researchLabPage.cycles_count"
+  "apps.autoResearch.researchLabPage.cycles_count",
+  "pages.overviewPage.today_messages",
+  "pages.overviewPage.today_sessions",
+  "pages.overviewPage.today_tokens"
 ]
