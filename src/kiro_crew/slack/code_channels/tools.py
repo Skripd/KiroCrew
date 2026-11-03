@@ -48,6 +48,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
@@ -418,13 +419,30 @@ async def _publish_plan_canvas(call: Call, args: dict[str, Any]) -> str:
 _canvas_locks: dict[str, asyncio.Lock] = {}
 #: Canvases created whose id could not be stored yet; written on the next call.
 _unsaved_canvas: dict[str, str] = {}
+#: Channels where a create of ours may have landed with its answer lost (also
+#: stored as ``canvas_create_pending_since``, so it outlasts a restart).
+_maybe_created: set[str] = set()
 
 
 def forget_channel(channel_id: str) -> None:
     """Drop the in-memory canvas state of an archived channel (it takes no more calls)."""
     _canvas_locks.pop(channel_id, None)
     _unsaved_canvas.pop(channel_id, None)
+    _maybe_created.discard(channel_id)
     _bar_locks.pop(channel_id, None)
+
+
+def _may_have_landed(exc: BaseException | None) -> bool:
+    return isinstance(exc, CodeChannelApiError) and exc.maybe_applied
+
+
+async def _note_maybe_created(channel: str) -> None:
+    """Remember a create whose answer was lost; best effort on disk, always in memory."""
+    _maybe_created.add(channel)
+    try:
+        await surface_update(channel, canvas_create_pending_since=time.time())
+    except Exception:
+        logger.warning("code channel %s: pending canvas create not stored", channel, exc_info=True)
 
 
 async def _create_canvas(call: Call, channel: str, markdown: str, title: str) -> str:
@@ -438,9 +456,21 @@ async def _create_canvas(call: Call, channel: str, markdown: str, title: str) ->
                 await asyncio.wait({creating})
             except asyncio.CancelledError:
                 pass  # already cancelling: keep waiting for Slack's answer
-        if not creating.cancelled() and creating.exception() is None and creating.result():
-            _unsaved_canvas[channel] = str(creating.result())
+        if not creating.cancelled():
+            if creating.exception() is None and creating.result():
+                _unsaved_canvas[channel] = str(creating.result())
+            elif _may_have_landed(creating.exception()):
+                _maybe_created.add(channel)  # no await while cancelling
         raise
+
+
+async def _adopt_lost_create(call: Call, channel: str) -> str:
+    """The canvas a create of ours made when its answer was lost ("" when unknown)."""
+    try:
+        return await call.client.channel_canvas_id(channel)
+    except CodeChannelApiError as exc:
+        logger.info("code channel %s: channel canvas not read: %s", channel, exc.code)
+        return ""
 
 
 async def _publish_canvas_locked(call: Call, channel: str, markdown: str, title: str) -> str:
@@ -450,28 +480,39 @@ async def _publish_canvas_locked(call: Call, channel: str, markdown: str, title:
     )
     created = False
     if not canvas_id:
+        # Read before this create: only an EARLIER create's lost answer counts.
+        ours = channel in _maybe_created or bool(
+            record is not None and record.canvas_create_pending_since
+        )
         try:
             canvas_id = await _create_canvas(call, channel, markdown, title)
             created = True
         except CodeChannelApiError as exc:
+            if _may_have_landed(exc):
+                await _note_maybe_created(channel)
+                raise
             if exc.code != CANVAS_ALREADY_EXISTS:
                 raise
-            # Never retried, and never adopted: a canvas this gateway did not
-            # create may be a shared document, and writing it would edit it
-            # everywhere it appears.
-            raise ToolRefusal(
-                "Error: this channel already has a canvas that Kiro Crew did not create, "
-                "so it was left alone. Share the plan as an html view instead.",
-                CANVAS_ALREADY_EXISTS,
-            ) from None
+            # Adopted only when a create of ours may have made it (its answer was
+            # lost); otherwise never retried and never adopted: a canvas this
+            # gateway did not create may be a shared document, and writing it
+            # would edit it everywhere it appears.
+            canvas_id = await _adopt_lost_create(call, channel) if ours else ""
+            if not canvas_id:
+                raise ToolRefusal(
+                    "Error: this channel already has a canvas that Kiro Crew did not create, "
+                    "so it was left alone. Share the plan as an html view instead.",
+                    CANVAS_ALREADY_EXISTS,
+                ) from None
         if not canvas_id:
             raise CodeChannelApiError("conversations.canvases.create", "missing_canvas_id")
         _unsaved_canvas[channel] = canvas_id
     if _unsaved_canvas.get(channel) == canvas_id:
         # Held in memory until stored: a failed write raises, and the next call
         # stores it instead of creating a second canvas.
-        await surface_update(channel, plan_canvas_id=canvas_id)
+        await surface_update(channel, plan_canvas_id=canvas_id, canvas_create_pending_since=0.0)
         _unsaved_canvas.pop(channel, None)
+        _maybe_created.discard(channel)
     if not created:
         await call.client.set_canvas_content(channel, canvas_id, markdown)
     view_note = ""

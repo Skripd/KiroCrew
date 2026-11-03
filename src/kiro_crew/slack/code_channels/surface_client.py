@@ -174,6 +174,21 @@ class SurfaceClient(CodeChannelsClient):
         state = channel.get("is_archived") if isinstance(channel, dict) else None
         return state if isinstance(state, bool) else None
 
+    async def channel_canvas_id(self, channel_id: str) -> str:
+        """The channel canvas Slack reports for *channel_id* (``conversations.info``);
+        ``""`` when the answer names none."""
+        _check_id(channel_id, "channel_id")
+        params = {"channel": channel_id}
+        team = self._team_for(channel_id) if self._team_for else ""
+        if team:
+            params["team_id"] = team
+        data = await self._call("conversations.info", params, query=True)
+        channel = data.get("channel")
+        props = channel.get("properties") if isinstance(channel, dict) else None
+        canvas = props.get("canvas") if isinstance(props, dict) else None
+        file_id = canvas.get("file_id") if isinstance(canvas, dict) else None
+        return file_id if isinstance(file_id, str) else ""
+
     async def rename(self, channel_id: str, title: str) -> str:
         """``agents.sessions.rename`` for a code channel (never a ``thread_ts``)."""
         _check_id(channel_id, "channel_id")
