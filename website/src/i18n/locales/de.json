@@ -8203,7 +8203,11 @@
       "paste_lines_other": "[ Einfügen #{{seq}} · {{count}} Zeilen ]",
       "preview_more_lines_one": "… {{count}} weitere Zeile",
       "preview_more_lines_other": "… {{count}} weitere Zeilen",
-      "preview_gesture_hint": "Doppelklick fügt den ganzen Text ein · Rücktaste entfernt die Einfügung"
+      "preview_gesture_hint": "Doppelklick fügt den ganzen Text ein · Rücktaste entfernt die Einfügung",
+      "expand_pasted_lines_one": "{{count}} eingefügte Zeile ausklappen",
+      "expand_pasted_lines_other": "{{count}} eingefügte Zeilen ausklappen",
+      "collapse_pasted_lines_one": "{{count}} eingefügte Zeile einklappen",
+      "collapse_pasted_lines_other": "{{count}} eingefügte Zeilen einklappen"
     },
     "privacyChapter": {
       "continue": "Weiter",
@@ -10676,6 +10680,12 @@
       "offer_open": "{{host}} öffnen",
       "copy_failed": "Kopieren fehlgeschlagen. Markiere den Text in der App und kopiere ihn selbst.",
       "more_actions": "Weitere Aktionen"
+    },
+    "weekGrid": {
+      "job_at": "{{name}} um {{time}} {{tz}}",
+      "job_title": "{{name}} — {{time}} {{tz}}",
+      "job_title_paused": "{{name}} (pausiert) — {{time}} {{tz}}",
+      "job_name_paused": "{{name}} (pausiert)"
     }
   },
   "hooks": {
@@ -19661,7 +19671,8 @@
       "agents_active_other": "{{n}} aktiv",
       "slots_open_one": "{{n}} Slot frei",
       "slots_open_other": "{{n}} Slots frei",
-      "summary": "{{present}} · {{active}} · {{open}}"
+      "summary": "{{present}} · {{active}} · {{open}}",
+      "scene_button": "Szene {{label}}: {{desc}}"
     },
     "worldsPopout": {
       "hide_controls": "Steuerung ausblenden",

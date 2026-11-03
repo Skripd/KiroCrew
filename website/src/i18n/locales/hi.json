@@ -8203,7 +8203,11 @@
       "paste_lines_other": "[ पेस्ट #{{seq}} · {{count}} पंक्तियाँ ]",
       "preview_more_lines_one": "… {{count}} और पंक्ति",
       "preview_more_lines_other": "… {{count}} और पंक्तियाँ",
-      "preview_gesture_hint": "पूरा टेक्स्ट डालने के लिए डबल-क्लिक करो · Backspace पेस्ट को हटाता है"
+      "preview_gesture_hint": "पूरा टेक्स्ट डालने के लिए डबल-क्लिक करो · Backspace पेस्ट को हटाता है",
+      "expand_pasted_lines_one": "चिपकाई गई {{count}} पंक्ति खोलो",
+      "expand_pasted_lines_other": "चिपकाई गई {{count}} पंक्तियाँ खोलो",
+      "collapse_pasted_lines_one": "चिपकाई गई {{count}} पंक्ति बंद करो",
+      "collapse_pasted_lines_other": "चिपकाई गई {{count}} पंक्तियाँ बंद करो"
     },
     "privacyChapter": {
       "continue": "जारी रखें",
@@ -10676,6 +10680,12 @@
       "offer_open": "{{host}} खोलो",
       "copy_failed": "कॉपी नहीं हो सका। ऐप में टेक्स्ट चुनो और खुद कॉपी करो।",
       "more_actions": "और कार्रवाइयाँ"
+    },
+    "weekGrid": {
+      "job_at": "{{name}}, {{time}} {{tz}} पर",
+      "job_title": "{{name}} — {{time}} {{tz}}",
+      "job_title_paused": "{{name}} (रुका हुआ) — {{time}} {{tz}}",
+      "job_name_paused": "{{name}} (रुका हुआ)"
     }
   },
   "hooks": {
@@ -19661,7 +19671,8 @@
       "agents_active_other": "{{n}} सक्रिय",
       "slots_open_one": "{{n}} स्लॉट खाली",
       "slots_open_other": "{{n}} स्लॉट खाली",
-      "summary": "{{present}} · {{active}} · {{open}}"
+      "summary": "{{present}} · {{active}} · {{open}}",
+      "scene_button": "{{label}} दृश्य: {{desc}}"
     },
     "worldsPopout": {
       "hide_controls": "नियंत्रण छिपाएँ",
