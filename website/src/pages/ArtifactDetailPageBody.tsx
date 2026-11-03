@@ -20,7 +20,7 @@ import type { Artifact, ArtifactEvent, ArtifactComment } from '../types'
 
 import { i18nT } from '../i18n/t'
 import { errMessage } from '../utils/thunkError'
-import { fmtDateFields } from '../i18n/format'
+import { fmtDateFields, fmtDateTime, fmtNumber } from '../i18n/format'
 import ErrorNotice from '../components/ErrorNotice'
 import { useLanguageGeneration } from '../i18n/useLanguageGeneration'
 import type { UseQueryResult } from '@tanstack/react-query'
@@ -143,6 +143,11 @@ function formatEventTs(ts: string): string {
   })
 }
 
+/** A version number for a `v{{version}}` label: the locale's digits, no grouping. */
+function versionNumber(version: number | null | undefined): string {
+  return version == null ? '?' : fmtNumber(version, { useGrouping: false })
+}
+
 /** Lifecycle activity timeline. Renders a chronological feed of
  * created/edited/iterated/referenced/reverted events from the artifact's
  * audit log. */
@@ -208,11 +213,11 @@ const ActivityTimeline = memo(function ActivityTimeline({
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-baseline gap-x-2">
               <span className="font-medium text-text">{verb(ev.type, ev.metadata)}</span>
-              {ev.by && <span className="text-muted">{i18nT('pages.artifactDetailPage.by')} {ev.by}</span>}
+              {ev.by && <span className="text-muted">{i18nT('pages.artifactDetailPage.by_actor', { name: ev.by })}</span>}
               {ev.type === 'comment' ? null : ev.type === 'reverted' && ev.from_version != null ? (
-                <span className="text-muted">{i18nT('pages.artifactDetailPage.v')}{ev.from_version} {i18nT('pages.artifactDetailPage.v_2')}{ev.version}</span>
+                <span className="text-muted">{i18nT('pages.artifactDetailPage.version_change', { from: versionNumber(ev.from_version), to: versionNumber(ev.version) })}</span>
               ) : (
-                ev.version != null && <span className="text-muted">{i18nT('pages.artifactDetailPage.v_2')}{ev.version}</span>
+                ev.version != null && <span className="text-muted">{i18nT('pages.artifactDetailPage.to_version', { version: versionNumber(ev.version) })}</span>
               )}
               <span className="text-muted ml-auto">{formatEventTs(ev.ts)}</span>
             </div>
@@ -239,7 +244,7 @@ const ActivityTimeline = memo(function ActivityTimeline({
               </button>
             ) : ev.type === 'reverted' && ev.from_version != null ? (
               <span className="text-[11px] text-muted mt-0.5">
-                {i18nT('pages.artifactDetailPage.content_copied_from_v')}{ev.from_version}
+                {i18nT('pages.artifactDetailPage.content_copied_from_version', { version: versionNumber(ev.from_version) })}
               </span>
             ) : ev.session_id === 'dashboard:ui' ? (
               <span className="text-[11px] text-muted mt-0.5">{i18nT('pages.artifactDetailPage.via_dashboard')}</span>
@@ -614,7 +619,8 @@ export function ArtifactDetailPageBody({
       </div>
 
       <div className="mt-3 text-[12px] text-muted">
-        {i18nT('pages.artifactDetailPage.created')} {artifact.created_at} {i18nT('pages.artifactDetailPage.updated')} {artifact.updated_at} {"\u00b7"}{' '}
+        {i18nT('pages.artifactDetailPage.created_at_value', { date: fmtDateTime(artifact.created_at) })} {"\u00b7"}{' '}
+        {i18nT('pages.artifactDetailPage.updated_at_value', { date: fmtDateTime(artifact.updated_at) })} {"\u00b7"}{' '}
         {/* "Live" reflects the always-current state. Numbered versions
             are historical snapshots — when one is selected, isCurrent is
             false (because the dropdown is non-Live). */}
