@@ -67,17 +67,33 @@ class TestPollNeverRefreshesInsideTheInterval:
         assert resp.status == 200
 
     @pytest.mark.asyncio
-    async def test_elapsed_interval_does_refresh(self):
+    async def test_elapsed_interval_does_refresh(self, monkeypatch):
         # The timer is still the trigger -- this is not "never refresh".
         sessions_mod._usage_cache = {"credits_plan": 10.0}
         # flake-ok: pre-existing real-clock read stamping the usage cache one refresh interval past against the product's own clock, moved verbatim; tracked for a de-flake pass
         sessions_mod._usage_cache_ts = time.time() - (sessions_mod._USAGE_REFRESH_SECS + 1)
+        # The real refresh runs: the API yields no plan, so the scrape's reading lands.
+        monkeypatch.setattr(sessions_mod, "wrap_argv", lambda argv, **k: (list(argv), None))
+        monkeypatch.setattr(
+            sessions_mod.kiro_usage_api, "fetch_usage_limits", lambda **k: _api_result(None)
+        )
+        monkeypatch.setattr(
+            sessions_mod, "_resolve_kiro_bin_for_spawn", AsyncMock(return_value="/bin/kiro")
+        )
+        monkeypatch.setattr(
+            sessions_mod, "_fetch_whoami", AsyncMock(return_value=dict(_IDENTITY_A))
+        )
+        request = self._request()
+        spawn = AsyncMock(return_value=_mock_proc(SAMPLE_USAGE.encode()))
         with (
             patch.object(sessions_mod, "reject_if_kiro_unverified", AsyncMock(return_value=None)),
-            patch.object(sessions_mod, "_fetch_usage_bg", AsyncMock()) as fetch,
+            patch("asyncio.create_subprocess_exec", spawn),
         ):
-            await sessions_mod.api_sessions_usage(self._request())
-        fetch.assert_called_once()
+            await sessions_mod.api_sessions_usage(request)
+            tasks = list(request.app["state"]._background_tasks)
+            await asyncio.wait_for(asyncio.gather(*tasks), timeout=10)
+        assert len(tasks) == 1
+        assert sessions_mod._usage_cache["credits_plan"] == 10000.0
 
     def test_no_auth_store_trigger_is_reintroduced(self):
         # Guard the reason, not just the behaviour: a filesystem-watching trigger
