@@ -16892,9 +16892,9 @@
       },
       "channelDisabledPanel": {
         "checking_your_organization_s_channel_policy": "組織のチャネルポリシーを確認中…",
-        "is_turned_off_by_your_administrator": "は管理者によってオフにされています",
+        "channel_policy_status_unavailable": "{{channel}} のポリシーステータスが利用不可",
+        "channel_turned_off": "{{channel}} は管理者によってオフにされています",
         "kirocrew_couldn_t_confirm_whether_your_organizat": "{{productName}} は、組織のセキュリティポリシーでこのチャネルが許可されているか確認できませんでした。\n          状態が確定するまで設定は非表示になりますが、\n          適用状態には影響しません。再読み込みしてください。",
-        "policy_status_unavailable": "ポリシーステータスが利用不可",
         "your_organization_s_security_policy_disables_thi": "組織のセキュリティポリシーにより、このチャネルは無効になっています。\n        設定を利用できず、ここで構成しても反映されません。"
       },
       "channels": {
@@ -17549,7 +17549,8 @@
         "front_port_hint": "タスクのフロントプロキシがリッスンしているポートを使用してください（同梱のタスク定義では {{port}}）。",
         "home_you_local_bin_kirocrew_leave_blank_for_stan": "/home/you/.local/bin/kirocrew — 標準インストールの場合は空白のままにしてください",
         "host_1_alias": "host-1-alias",
-        "instances_stay_warm_live_tunnel_at_once_the_rest": "リモートクルーは一度にウォーム状態を保つ（ライブトンネル）。\n                残りはオンデマンドで再接続します。",
+        "remote_port_ttl": "· リモートポート {{port}} · ttl {{ttl}}",
+        "warm_cap_count_other": "最大 {{count}} 件のリモートクルーが同時にウォーム状態（ライブトンネル）を保ちます。残りはオンデマンドで再接続します。調整:",
         "is_installed_somewhere_non_standard_on_the_remot": "はクルー上の非標準の場所にインストールされています。PATH 上の通常の pip インストールの場合は空白のままにしてください。見つけるには、クルーで実行してください：",
         "kirocrew": "kirocrew",
         "kirocrew_restart": "kirocrew restart",
@@ -17585,10 +17586,8 @@
         "to_fully_tear_down_any_tunnels_still_running_fro": "以前から実行中のトンネルを完全に破棄するために。",
         "token_left": "· トークン残り {{time}}",
         "token_ttl": "トークン TTL",
-        "ttl": "· ttl",
         "tunnels_via_aws_ssm_start_session_no_inbound_ssh": "AWS SSM start-session経由のトンネル — インバウンドSSHポートまたはキーは不要です。AWS CLI、session-manager-plugin、およびssm:StartSessionのアクセス許可が必要です。",
         "unknown_error": "不明なエラー",
-        "up_to": "最大",
         "update_setting_failed": "設定の更新に失敗しました: {{error}}",
         "use_an_absolute_path_no": ")。\n            絶対パスを使用してください (相対パスではなく",
         "enable_via_setting": "または、<settingRef/> を設定してから、<restartCmd/> を実行してください。",
@@ -17743,9 +17742,8 @@
       },
       "postureDisclosure": {
         "filter": "{{label}} をフィルター",
-        "more": "詳細",
+        "show_more_count_other": "さらに {{count}} 件表示",
         "no_matches_for_query": "「{{query}}」に一致するものはありません。",
-        "show": "表示",
         "unavailable": "利用不可",
         "live_count_unavailable": "このコントロールのライブ件数は現在利用できません。",
         "show_details": "{{label}} の詳細を表示 — {{amount}}",

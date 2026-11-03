@@ -16892,9 +16892,9 @@
       },
       "channelDisabledPanel": {
         "checking_your_organization_s_channel_policy": "正在检查你所在组织的渠道策略…",
-        "is_turned_off_by_your_administrator": "已被管理员关闭",
+        "channel_policy_status_unavailable": "{{channel}} 策略状态不可用",
+        "channel_turned_off": "{{channel}} 已被管理员关闭",
         "kirocrew_couldn_t_confirm_whether_your_organizat": "{{productName}} 无法确认你所在组织的安全策略\n          是否允许此渠道。在状态解析完成前，其设置处于隐藏状态 —\n          强制执行不受影响。请尝试重新加载。",
-        "policy_status_unavailable": "策略状态不可用",
         "your_organization_s_security_policy_disables_thi": "你所在组织的安全策略已禁用此渠道。其设置\n        不可用，此处的任何配置都不会生效。"
       },
       "channels": {
@@ -17549,7 +17549,8 @@
         "front_port_hint": "使用任务前端代理所监听的端口（随附的任务定义中为 {{port}}）。",
         "home_you_local_bin_kirocrew_leave_blank_for_stan": "/home/you/.local/bin/kirocrew  —  标准安装请留空",
         "host_1_alias": "host-1-alias",
-        "instances_stay_warm_live_tunnel_at_once_the_rest": "个远程 Crew 可同时保持预热（活动隧道）；其余按需重连。可通过\n                以下命令调整",
+        "remote_port_ttl": "· 远程端口 {{port}} · ttl {{ttl}}",
+        "warm_cap_count_other": "最多 {{count}} 个远程 Crew 可同时保持预热（活动隧道）；其余按需重连。可通过以下命令调整",
         "is_installed_somewhere_non_standard_on_the_remot": "安装在该 Crew 的非标准位置时才需要。若为 PATH 上的常规 pip 安装，请留空。要查找路径，请在该 Crew 上运行：",
         "kirocrew": "kirocrew",
         "kirocrew_restart": "kirocrew restart",
@@ -17585,10 +17586,8 @@
         "to_fully_tear_down_any_tunnels_still_running_fro": "以彻底关闭此前仍在运行的隧道。",
         "token_left": "· 令牌剩余 {{time}}",
         "token_ttl": "令牌 TTL",
-        "ttl": "· ttl",
         "tunnels_via_aws_ssm_start_session_no_inbound_ssh": "通过 aws ssm start-session 建立隧道 —— 无需入站 SSH 端口或密钥。需要 AWS CLI、session-manager-plugin 以及 ssm:StartSession 权限。",
         "unknown_error": "未知错误",
-        "up_to": "最多",
         "update_setting_failed": "更新设置失败：{{error}}",
         "use_an_absolute_path_no": "）。\n            请使用绝对路径（不含",
         "enable_via_setting": "或者，设置 <settingRef/>，然后运行 <restartCmd/>。",
@@ -17743,9 +17742,8 @@
       },
       "postureDisclosure": {
         "filter": "筛选 {{label}}",
-        "more": "更多",
+        "show_more_count_other": "再展开 {{count}} 项",
         "no_matches_for_query": "无匹配结果：“{{query}}”。",
-        "show": "展开",
         "unavailable": "不可用",
         "live_count_unavailable": "此控制项的实时计数目前不可用。",
         "show_details": "展开 {{label}} 详情 — {{amount}}",

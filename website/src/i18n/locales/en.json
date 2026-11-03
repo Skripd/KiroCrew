@@ -9778,10 +9778,10 @@
       },
       "channelDisabledPanel": {
         "checking_your_organization_s_channel_policy": "Checking your organization's channel policy…",
-        "is_turned_off_by_your_administrator": "is turned off by your administrator",
         "kirocrew_couldn_t_confirm_whether_your_organizat": "{{productName}} couldn't confirm whether your organization's security policy\n          permits this channel. Its settings are hidden until the status resolves —\n          enforcement is unaffected. Try reloading.",
-        "policy_status_unavailable": "policy status unavailable",
-        "your_organization_s_security_policy_disables_thi": "Your organization's security policy disables this channel. Its settings\n        are unavailable and any configuration here would not take effect."
+        "your_organization_s_security_policy_disables_thi": "Your organization's security policy disables this channel. Its settings\n        are unavailable and any configuration here would not take effect.",
+        "channel_policy_status_unavailable": "{{channel}} policy status unavailable",
+        "channel_turned_off": "{{channel}} is turned off by your administrator"
       },
       "channelsPanel": {
         "channels": "Messaging Channels",
@@ -10087,7 +10087,6 @@
         "front_port_hint": "Use the port the task's front proxy listens on ({{port}} in the shipped task definition).",
         "home_you_local_bin_kirocrew_leave_blank_for_stan": "/home/you/.local/bin/kirocrew  —  leave blank for standard installs",
         "host_1_alias": "host-1-alias",
-        "instances_stay_warm_live_tunnel_at_once_the_rest": "remote crews stay warm (live tunnel) at once; the rest reconnect on\n                demand. Tune with",
         "is_installed_somewhere_non_standard_on_the_remot": "is installed somewhere non-standard on the crew. Leave blank for a normal pip install on PATH. To find it, run on the crew:",
         "kirocrew": "kirocrew",
         "kirocrew_restart": "kirocrew restart",
@@ -10120,12 +10119,13 @@
         "the_user_the_remote_gateway_runs_as_sudo_u_for_s": "The user the remote gateway runs as — SSM commands run via sudo -u. Use ubuntu on Ubuntu AMIs.",
         "to_fully_tear_down_any_tunnels_still_running_fro": "to fully tear down any tunnels still running from before.",
         "token_ttl": "Token TTL",
-        "ttl": "· ttl",
         "tunnels_via_aws_ssm_start_session_no_inbound_ssh": "Tunnels via aws ssm start-session — no inbound SSH port or key needed. Requires the AWS CLI, the session-manager-plugin, and ssm:StartSession permission.",
-        "up_to": "Up to",
         "use_an_absolute_path_no": ").\n            Use an absolute path (no",
         "enable_via_setting": "Alternatively, set <settingRef/>, then run <restartCmd/>.",
-        "not_active_until_restart": "— not active until restart"
+        "not_active_until_restart": "— not active until restart",
+        "remote_port_ttl": "· remote port {{port}} · ttl {{ttl}}",
+        "warm_cap_count_one": "Up to {{count}} remote crew stays warm (live tunnel) at once; the rest reconnect on demand. Tune with",
+        "warm_cap_count_other": "Up to {{count}} remote crews stay warm (live tunnel) at once; the rest reconnect on demand. Tune with"
       },
       "notificationsPanel": {
         "app": "app",
@@ -10158,8 +10158,6 @@
         "priority_passive": "Passive"
       },
       "postureDisclosure": {
-        "more": "more",
-        "show": "Show",
         "unavailable": "unavailable",
         "count_sensitive_paths_one": "{{count}} credential path",
         "count_sensitive_paths_other": "{{count}} credential paths",
@@ -10180,7 +10178,9 @@
         "count_audit_surfaces_one": "{{count}} session-key surface",
         "count_audit_surfaces_other": "{{count}} session-key surfaces",
         "count_token_auth_one": "{{count}} auth control",
-        "count_token_auth_other": "{{count}} auth controls"
+        "count_token_auth_other": "{{count}} auth controls",
+        "show_more_count_one": "Show {{count}} more",
+        "show_more_count_other": "Show {{count}} more"
       },
       "releases": {
         "badge_unreleased": "Unreleased",
