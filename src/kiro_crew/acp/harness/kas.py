@@ -713,6 +713,7 @@ class KasHarness(MembershipHarness):
         member_dispatch: bool = False,
         crew_panel: bool = False,
         session_key: str = "",
+        worker_stub_names: frozenset[str] | None = None,
     ) -> SessionExtras:
         """Project the agent spec onto KAS, for both session start paths.
 
@@ -830,6 +831,13 @@ class KasHarness(MembershipHarness):
                     exc_info=True,
                 )
                 stubbed = frozenset()
+            if worker_stub_names is not None and agent == MATE_WORKER_AGENT:
+                # A crewmate's worker: the names of the stubs its session/new
+                # carries, from the caller's one overlay lookup
+                # (``runtime_session_setup._kas_worker_stub_names``). Asking the
+                # overlay again, by name or by session, could answer differently
+                # and leave a server on neither side.
+                stubbed = worker_stub_names
             if member_dispatch:
                 # The member's dashboard server arrives as a session-level entry
                 # too, so it joins the subtraction set for the same reason: an

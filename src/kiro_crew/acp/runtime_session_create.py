@@ -38,6 +38,7 @@ from kiro_crew.acp._dispatch import (
 from kiro_crew.acp.kas_agents import hoist_servers_for_session
 from kiro_crew.acp.runtime_session_setup import (
     _disable_check_scope,
+    _kas_worker_stub_names,
     _pooled_session_servers_and_ref_spec,
 )
 from kiro_crew.acp.runtime_start import _START_COLLECT_TIMEOUT_DEFAULT, StartCollector, StartPermit
@@ -196,6 +197,8 @@ async def create_session(
     mirrored_snapshot: Any = None
     consumed_spec: Any = None
     ref_spec: Any = None
+    # The KAS crewmate worker's stub names, set beside its one overlay lookup.
+    worker_stubs: frozenset[str] | None = None
     if mcp_servers is None:
         # A mirrored host takes its whole array from the mirror; every other host
         # takes the pooled stubs it always took. Which one is a synchronous
@@ -226,9 +229,13 @@ async def create_session(
                 self.acp_backend,
                 session_work_dir,
                 launch_spec,
+                session_key or "",
             )
             mcp_servers = await self._unpooled_control_planes(
                 pooled, agent or self._agent, session_work_dir
+            )
+            worker_stubs = _kas_worker_stub_names(
+                self.acp_backend, pool_agent, session_key or "", pooled
             )
             mcp_servers, stub_token = await self._own_stub_session(mcp_servers, session_key)
     else:
@@ -321,6 +328,7 @@ async def create_session(
         # the mount and the grant together so the two cannot disagree.
         crew_panel=panel_mounted,
         session_key=session_key,
+        **({} if worker_stubs is None else {"worker_stub_names": worker_stubs}),
     )
     kas_agents = kas_extras.custom_agents
     # The generation the wire payload was built from, or None when this host takes its
