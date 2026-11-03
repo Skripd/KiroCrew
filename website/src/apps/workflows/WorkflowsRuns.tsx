@@ -15,7 +15,7 @@
  *   GET  /api/workflows/runs/{id}       -> RunDetail                (with events[])
  *   POST /api/workflows/runs/{id}/cancel -> { run_id, cancelled }
  */
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Workflow as WorkflowIcon,
@@ -227,13 +227,35 @@ export function orderRuns(rows: RunRow[]): RunRow[] {
 // Component
 // ---------------------------------------------------------------------------
 
+/** `set` with `id` added (`on`) or removed (`!on`); the same object when unchanged. */
+function withMember(set: ReadonlySet<string>, id: string, on: boolean): ReadonlySet<string> {
+  if (set.has(id) === on) return set
+  const next = new Set(set)
+  if (on) next.add(id)
+  else next.delete(id)
+  return next
+}
+
+/** `record` without `key`; the same object when it had none. */
+function withoutKey(record: Readonly<Record<string, string>>, key: string): Readonly<Record<string, string>> {
+  if (!(key in record)) return record
+  const { [key]: _dropped, ...rest } = record
+  return rest
+}
+
 export default function WorkflowsRuns({ embedded = false }: { embedded?: boolean }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [saveOpen, setSaveOpen] = useState(false)
   const [saveName, setSaveName] = useState('')
   const [saveSlug, setSaveSlug] = useState('')
   const [saveDescription, setSaveDescription] = useState('')
-  const [savedSlug, setSavedSlug] = useState('')
+  // What a Cancel or a Save did, kept per run id. A run shows only its own
+  // outcomes: an action on one run can finish while another run is open, and
+  // two cancels or two saves can be in flight at once.
+  const [cancelling, setCancelling] = useState<ReadonlySet<string>>(() => new Set())
+  const [cancelErrors, setCancelErrors] = useState<Readonly<Record<string, string>>>({})
+  const [savedSlugs, setSavedSlugs] = useState<Readonly<Record<string, string>>>({})
+  const [saveFailed, setSaveFailed] = useState<ReadonlySet<string>>(() => new Set())
   // Tree or graph for the SAME snapshot — a mode on this panel rather than a second
   // tab, so the graph reads one data source and costs nothing when unused. Local, not
   // persisted: which question a reader is asking changes run to run.
@@ -264,35 +286,55 @@ export default function WorkflowsRuns({ embedded = false }: { embedded?: boolean
   })
 
   // Cancel — mutation that invalidates both queries so the list + detail refresh.
+  // The hook-level callbacks run for every cancel, not only the latest one.
   const cancelMutation = useMutation({
     mutationFn: (id: string) => corePost<CancelResponse>(`/runs/${encodeURIComponent(id)}/cancel`),
-    onSettled: () => {
+    onMutate: id => {
+      setCancelling(prev => withMember(prev, id, true))
+      setCancelErrors(prev => withoutKey(prev, id))
+    },
+    // The failure is shown on the run it is about, so bring that run up: a
+    // Cancel pressed on a row other than the open one would otherwise fail with
+    // nothing on screen to say so.
+    onError: (err, id) => {
+      setCancelErrors(prev => ({ ...prev, [id]: err instanceof Error ? err.message : String(err) }))
+      setSelectedId(id)
+    },
+    onSettled: (_data, _err, id) => {
+      setCancelling(prev => withMember(prev, id, false))
       queryClient.invalidateQueries({ queryKey: ['workflow-runs'] })
       queryClient.invalidateQueries({ queryKey: ['workflow-run-detail'] })
     },
   })
+  // The open run, read when a save settles: the dialog is closed only when the
+  // save that settled is for the run it is open on.
+  const selectedRef = useRef(selectedId)
+  selectedRef.current = selectedId
   const saveMutation = useMutation({
-    mutationFn: () =>
-      api.promoteWorkflowRun(selectedId!, {
+    mutationFn: (runId: string) =>
+      api.promoteWorkflowRun(runId, {
         name: saveName.trim(),
         description: saveDescription.trim(),
         slug: saveSlug.trim(),
       }),
-    onSuccess: async result => {
-      setSavedSlug(result.definition.slug)
-      setSaveOpen(false)
+    onMutate: runId => setSaveFailed(prev => withMember(prev, runId, false)),
+    onSuccess: async (result, runId) => {
+      setSavedSlugs(prev => ({ ...prev, [runId]: result.definition.slug }))
+      if (selectedRef.current === runId) setSaveOpen(false)
       await queryClient.invalidateQueries({ queryKey: ['workflow-definitions'] })
     },
+    // Kept per run, so a save whose dialog was closed while it was in flight
+    // still says it failed, on the run it was for.
+    onError: (_err, runId) => setSaveFailed(prev => withMember(prev, runId, true)),
   })
-  const cancelMutationError =
-    cancelMutation.error instanceof Error ? cancelMutation.error.message : cancelMutation.error ? String(cancelMutation.error) : null
+  const cancelMutationError = selectedId ? cancelErrors[selectedId] ?? null : null
   const detailError =
     cancelMutationError ?? (detailErrorObj instanceof Error ? detailErrorObj.message : detailErrorObj ? String(detailErrorObj) : null)
-  const cancellingId = cancelMutation.isPending ? (cancelMutation.variables ?? null) : null
+  const savedSlug = selectedId ? savedSlugs[selectedId] ?? '' : ''
+  const saveFailedHere = !!selectedId && saveFailed.has(selectedId)
 
   const select = useCallback((id: string) => {
     setSelectedId(id)
-    setSavedSlug('')
   }, [])
   const cancelRun = useCallback((id: string) => cancelMutation.mutate(id), [cancelMutation])
 
@@ -386,11 +428,11 @@ export default function WorkflowsRuns({ embedded = false }: { embedded?: boolean
                   <button
                     type="button"
                     onClick={() => cancelRun(row.run_id)}
-                    disabled={cancellingId === row.run_id}
+                    disabled={cancelling.has(row.run_id)}
                     className="flex shrink-0 items-center gap-1 px-2 py-0.5 text-[11px] rounded border border-border disabled:opacity-50"
                     aria-label={i18nT('apps.workflows.workflowsRuns.cancel')}
                   >
-                    <Ban size={12} /> {cancellingId === row.run_id ? i18nT('apps.workflows.workflowsRuns.cancelling') : i18nT('apps.workflows.workflowsRuns.cancel')}
+                    <Ban size={12} /> {cancelling.has(row.run_id) ? i18nT('apps.workflows.workflowsRuns.cancelling') : i18nT('apps.workflows.workflowsRuns.cancel')}
                   </button>
                 )}
               </div>
@@ -432,6 +474,11 @@ export default function WorkflowsRuns({ embedded = false }: { embedded?: boolean
         </div>
 
         {detailError && <ErrorNotice message={detailError} askAgent />}
+        {/* The dialog holds its own notice; this one covers a save whose dialog
+            was closed before it failed. */}
+        {saveFailedHere && !saveOpen ? (
+          <ErrorNotice message={i18nT('pages.overview.workflowLibrary.request_failed')} />
+        ) : null}
 
         {!selectedId && !detailError && (
           <div className="text-[12px] text-muted border border-dashed border-border rounded p-4">
@@ -497,7 +544,7 @@ export default function WorkflowsRuns({ embedded = false }: { embedded?: boolean
             </Btn>
             <Btn
               primary
-              onClick={() => saveMutation.mutate()}
+              onClick={() => { if (selectedId) saveMutation.mutate(selectedId) }}
               disabled={
                 saveMutation.isPending || !saveName.trim() || !saveSlug.trim()
               }
