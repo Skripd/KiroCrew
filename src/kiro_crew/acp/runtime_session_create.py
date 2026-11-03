@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
-from kiro_crew.acp import runtime_start
+from kiro_crew.acp import kas_env_launch, runtime_start
 from kiro_crew.acp._dispatch import (
     attach_kas_custom_agents,
     build_session_new_params,
@@ -328,7 +328,11 @@ async def create_session(
     # ``hoist_managed_servers``). The kiro path returns None here and is
     # untouched.
     kas_agents, mcp_servers = hoist_managed_servers(
-        kas_agents, active_agent, mcp_servers, session_token=stub_token
+        kas_agents,
+        active_agent,
+        mcp_servers,
+        session_token=stub_token,
+        app_launches=kas_extras.app_launches,
     )
     # The host's last word on its own tool surface. A host that reads an
     # agent spec passes the list straight back; one that has nothing else
@@ -704,6 +708,10 @@ async def _finish_create_session(
     # What the registered agent batch grants, recorded by the harness that
     # registered one; a host that took its agent at spawn time records nothing.
     self._harness.record_session_projection(handle, kas_agents, active_agent)
+    # The snapshot names this projection wrote, for shutdown. session/new hoists
+    # only managed servers, which never start through the launcher, so the batch
+    # still names every launcher entry here.
+    handle.kas_launch_snapshots.extend(kas_env_launch.batch_snapshot_names(kas_agents))
     if self._mirrored_spec_check_needed(mirrored_snapshot):
         await self._require_unchanged_mirrored_spec(session_id, mirrored_snapshot)
 
